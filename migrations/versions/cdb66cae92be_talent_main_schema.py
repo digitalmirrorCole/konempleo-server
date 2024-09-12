@@ -11,7 +11,7 @@ from alembic import op
 from datetime import datetime
 import sqlalchemy as sa
 
-from models.user import UserEnum
+from models.models import UserEnum
 
 
 # revision identifiers, used by Alembic.
