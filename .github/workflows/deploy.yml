@@ -64,7 +64,7 @@ jobs:
 
       - name: Tag Docker image with ECS task definition
         run: |
-          docker tag konempleo:${{ github.sha }} konempleo:${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE
+          docker tag konempleo:${{ github.sha }} ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
 
       - name: Push Docker image to ECR
         run: |
