@@ -1,5 +1,6 @@
 from http.client import HTTPException
 import json
+import os
 import re
 from docx import Document
 from fastapi import UploadFile
@@ -17,7 +18,7 @@ from models.models import CVitae, VitaeOffer
 BUCKET_NAME = "your_s3_bucket_name"
 
 client = OpenAI(
-  api_key= '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',
+  api_key= os.getenv("OPENAI_KEY", "none"),
 )
 
 
