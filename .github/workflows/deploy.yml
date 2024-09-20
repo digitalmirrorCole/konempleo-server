@@ -74,7 +74,7 @@ jobs:
         run: |
           echo "${{ secrets.AWS_PEM_KEY }}" > konempleo.pem
           chmod 400 konempleo.pem
-          ssh -i "konempleo.pem" ec2-user@ec2-3-144-33-2.us-east-2.compute.amazonaws.com -tt <<EOF
+          ssh -i "konempleo.pem" -tt ec2-user@ec2-3-144-33-2.us-east-2.compute.amazonaws.com <<EOF
           export DOCKER_IMAGE=$(docker ps -a -q --filter="name=konempleo")
           docker stop $DOCKER_IMAGE
           docker rm $DOCKER_IMAGE
