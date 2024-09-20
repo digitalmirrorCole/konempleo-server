@@ -73,7 +73,7 @@ jobs:
       - name: Deploy to EC2 instance via SSH
         run: |
           echo "${{ secrets.AWS_PEM_KEY }}" > konempleo.pem
-          ssh -i "konempleo.pem" ec2-user@ec2-3-144-33-2.us-east-2.compute.amazonaws.com <<EOF
+          ssh -i "konempleo.pem" ec2-user@ec2-3-144-33-2.us-east-2.compute.amazonaws.com -tt <<EOF
           export DOCKER_IMAGE=$(docker ps -a -q --filter="name=konempleo")
           docker stop $DOCKER_IMAGE
           docker rm $DOCKER_IMAGE
