@@ -14,7 +14,6 @@ import sqlalchemy as sa
 from models.models import UserEnum
 
 
-
 # revision identifiers, used by Alembic.
 revision: str = 'cdb66cae92be'
 down_revision: Union[str, None] = None
