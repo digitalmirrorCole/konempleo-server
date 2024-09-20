@@ -61,7 +61,7 @@ jobs:
       - name: Build and push Docker image
         run: |
           docker build -t konempleo .
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:aff289c0e983
 
           #      - name: Deploy to ECS
           #uses: imehedi/actions-awscli-v2@latest
