@@ -12,10 +12,16 @@ class UserBase(BaseModel):
     role: UserEnum
     active: bool
 
+class UserAdminCreateDTO(BaseModel):
+    fullname: str
+    email: EmailStr
+    role: UserEnum
+    phone: Optional[str] = None
+
 class UserCreateDTO(BaseModel):
     fullname: str
     email: EmailStr
-    role: Optional[UserEnum] = 3
+    role: Optional[UserEnum] = 4
     phone: Optional[str] = None
 
 class UserInsert(BaseModel):

@@ -8,6 +8,7 @@ class UserEnum(IntEnum):
     super_admin = 1
     admin = 2
     company = 3
+    company_recruit = 4
 
 class contractEnum(IntEnum):
     full_time = 1

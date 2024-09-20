@@ -24,22 +24,23 @@ class CompanyCreate(BaseModel):
     document: str
     document_type: str
     city: str
-    employees: int
     activeoffers: Optional[int] = 0
     totaloffers: Optional[int] = 0
     employees: Optional[int] = 0
-    # konempleo_responsible = int
+    konempleo_responsible = int
     responsible_user: UserCreateDTO
-    
 
 class CompanyUpdate(BaseModel,extra = Extra.forbid):
-    name: str
-    sector: str
-    document: str
-    document_type: str
-    address: str
-    city: str
-    picture: str
+    name: Optional[str] = None
+    sector: Optional[str] = None
+    document: Optional[str] = None
+    document_type: Optional[str] = None
+    city: Optional[str] = None
+    employees: Optional[int] = None
+    activeoffers: Optional[int] = None
+    totaloffers: Optional[int] = None
+    konempleo_responsible: Optional[int] = None
+    responsible_user: Optional[UserCreateDTO] = None
     
 class CompanySoftDelete(BaseModel):
     deleted: bool
