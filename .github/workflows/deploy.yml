@@ -61,13 +61,29 @@ jobs:
       - name: Build and push Docker image
         run: |
           docker build -t konempleo .
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:aff289c0e983
 
-          #      - name: Deploy to ECS
-          #uses: imehedi/actions-awscli-v2@latest
-          #with:
-          #args: ecs update-service --cluster ecs-konempleo-dev-001 --service serv-konempleo-dev-001 --force-new-deployment
-          #env:
-          #AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          #AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          #AWS_DEFAULT_REGION: "us-east-2"
+      - name: Tag Docker image with ECS task definition
+        run: |
+          aws ecs describe-task-definitions --task-definition task-konempleo-dev-002 \
+            --query 'taskDefinitions[0].containerDefinitions[0].image' \
+            --output text > image-tag.txt
+          image_tag=$(cat image-tag.txt)
+          docker tag konempleo:${{ github.sha }} konempleo:$image_tag
+
+      - name: Push Docker image to ECR
+        run: |
+          aws ecs register-task-definition --task-definition task-konempleo-dev-002 \
+            --container-definitions '[{"name": "konempleo", "image": "konempleo:${{ github.sha }}", "cpu": 256, "memory": 512}]'
+          docker push konempleo:$image_tag
+#          docker buildx create --use
+#          docker buildx inspect --bootstrap
+#          docker buildx build --platform linux/x86_64 -t ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest --push .
+
+#      - name: Deploy to ECS
+#        uses: imehedi/actions-awscli-v2@latest
+#        with:
+#          args: ecs update-service --cluster ecs-konempleo-dev-001 --service serv-konempleo-dev-001 --force-new-deployment
+#        env:
+#          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#          AWS_DEFAULT_REGION: "us-east-2"
