@@ -64,13 +64,11 @@ jobs:
 
       - name: Tag Docker image with ECS task definition
         run: |
-          docker tag konempleo:${{ github.sha }} ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
+          docker tag konempleo:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
 
       - name: Push Docker image to ECR
         run: |
-          aws ecs register-task-definition --task-definition task-konempleo-dev-002 \
-            --container-definitions '[{"name": "konempleo", "image": "konempleo:${{ github.sha }}", "cpu": 256, "memory": 512}]'
-          docker push konempleo:$image_tag
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
 #          docker buildx create --use
 #          docker buildx inspect --bootstrap
 #          docker buildx build --platform linux/x86_64 -t ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest --push .
