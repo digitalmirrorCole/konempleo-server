@@ -64,7 +64,7 @@ jobs:
 
       - name: Tag Docker image with ECS task definition
         run: |
-          aws ecs describe-task-definitions --task-definition task-konempleo-dev-002 \
+          aws ecs describe-task-definition --task-definition task-konempleo-dev-002 \
             --query 'taskDefinitions[0].containerDefinitions[0].image' \
             --output text > image-tag.txt
           image_tag=$(cat image-tag.txt)
