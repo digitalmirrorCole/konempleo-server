@@ -26,6 +26,8 @@ class OfferBase(BaseModel):
     cargoId: Optional[int] = None
     filter_questions: Optional[str] = None
     assigned_cvs: Optional[int] = 0
+    offer_owner: Optional[int] = None
+    whatsapp_message: Optional[str] = None
 
 # DTO for creating an Offer
 class OfferCreateDTO(OfferBase):

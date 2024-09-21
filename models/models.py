@@ -119,10 +119,12 @@ class Offer(Base):
     disabled = Column(Boolean, default=False)
     experience_years = Column(Integer)
     offer_type = Column(String)
+    whatsapp_message = Column(String)
     ed_required = Column(Enum(educationEnum))
     cargoId = Column(Integer, ForeignKey('cargo.id'))
-    # assigned_cvs = Column(Integer, server_default=text('0'))
-    # filter_questions = Column(String)
+    offer_owner = Column(Integer, ForeignKey('user.id'))
+    assigned_cvs = Column(Integer, server_default=text('0'))
+    filter_questions = Column(String)
 
     
     offer_skills = relationship('OfferSkill', back_populates='offer')
@@ -171,6 +173,7 @@ class Users(Base):
     email = Column(String, nullable=False)
     role = Column(Enum(UserEnum), nullable=False)
     active = Column(Boolean, default=True)
+    suspended = Column(Boolean, default=False)
     phone = Column(String, nullable=True)
     password = Column(String, nullable=False)
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())

@@ -29,6 +29,7 @@ def upgrade() -> None:
     sa.Column('phone', sa.String(), nullable=True),
     sa.Column('role', sa.Enum(UserEnum), nullable=False),
     sa.Column('active', sa.Boolean(), nullable=False, server_default=sa.text('true')),
+    sa.Column('suspended', sa.Boolean(), nullable=False, server_default=sa.text('false')),
     sa.Column('must_change_password', sa.Boolean(), nullable=False, server_default=sa.text('true')),
     sa.Column('password', sa.String(), nullable=False),
     sa.Column('created_at', sa.TIMESTAMP(), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
@@ -94,10 +95,13 @@ def upgrade() -> None:
     sa.Column('disabled', sa.Boolean(), nullable=True),
     sa.Column('experience_years', sa.Integer(), nullable=True),
     sa.Column('offer_type', sa.String(), nullable=True),
+    sa.Column('whatsapp_message', sa.String(), nullable=True),
     sa.Column('ed_required', sa.Enum('none', 'high_school', 'bachelor', 'master', 'doctorate', name='ed_required_enum'), nullable=True),
     sa.Column('cargoId', sa.Integer(), nullable=False),
-    # sa.Column('filter_questions', sa.String(), nullable=True),
-    # sa.Column('assigned_cvs', sa.Integer(), nullable=True, server_default=sa.text('0')),
+    sa.Column('offer_owner', sa.Integer(), nullable=False),
+    sa.Column('filter_questions', sa.String(), nullable=True),
+    sa.Column('assigned_cvs', sa.Integer(), nullable=True, server_default=sa.text('0')),
+    sa.ForeignKeyConstraint(['offer_owner'], ['user.id'], ),
     sa.ForeignKeyConstraint(['cargoId'], ['cargo.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
