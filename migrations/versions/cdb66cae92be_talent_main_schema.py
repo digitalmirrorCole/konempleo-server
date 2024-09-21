@@ -101,7 +101,7 @@ def upgrade() -> None:
     sa.Column('offer_owner', sa.Integer(), nullable=False),
     sa.Column('filter_questions', sa.String(), nullable=True),
     sa.Column('assigned_cvs', sa.Integer(), nullable=True, server_default=sa.text('0')),
-    sa.ForeignKeyConstraint(['offer_owner'], ['user.id'], ),
+    sa.ForeignKeyConstraint(['offer_owner'], ['users.id'], ),
     sa.ForeignKeyConstraint(['cargoId'], ['cargo.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
