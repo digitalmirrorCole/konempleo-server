@@ -16,6 +16,16 @@ from models.models import Company as CompanyModel
 
 companyRouter = APIRouter()
 companyRouter.tags = ['Company']
+fields_to_update = [
+    'name', 
+    'sector', 
+    'document', 
+    'document_type', 
+    'city', 
+    'employees', 
+    'activeoffers', 
+    'totaloffers'
+]
 
 @companyRouter.post("/company/", status_code=201, response_model=Company)
 def create_company(
@@ -101,87 +111,77 @@ def update_company(
         raise HTTPException(status_code=404, detail="Company not found")
 
     # Update company fields
-    if company_in.name is not None:
-        company.name = company_in.name
-    if company_in.sector is not None:
-        company.sector = company_in.sector
-    if company_in.document is not None:
-        company.document = company_in.document
-    if company_in.document_type is not None:
-        company.document_type = company_in.document_type
-    if company_in.city is not None:
-        company.city = company_in.city
-    if company_in.employees is not None:
-        company.employees = company_in.employees
-    if company_in.activeoffers is not None:
-        company.activeoffers = company_in.activeoffers
-    if company_in.totaloffers is not None:
-        company.totaloffers = company_in.totaloffers
+    for field in fields_to_update:
+        value = getattr(company_in, field, None)
+        if value is not None:
+            setattr(company, field, value)
 
-    # Handle responsible_user or konempleo_responsible update based on the role
-    if company_in.responsible_user or company_in.konempleo_responsible:
-        
-        # Handle responsible_user update (role = company)
-        if company_in.responsible_user:
-            # Check if the user already exists
-            responsible_user = db.query(Users).filter(Users.email == company_in.responsible_user.email).first()
+    # Handle responsible_user update (role = company)
+    if company_in.responsible_user:
+        # Check if the new responsible user already exists
+        responsible_user = db.query(Users).filter(Users.email == company_in.responsible_user.email).first()
 
-            # If a responsible user is being replaced, deactivate the old one (but only the one we are replacing, not others)
-            old_responsible_user = db.query(CompanyUser).join(Users).filter(
-                CompanyUser.companyId == company_id,
-                Users.role == UserEnum.company,
-                CompanyUser.userId == responsible_user.id  # Use the ID from the matched responsible_user
-            ).first()
-            
-            if old_responsible_user:
-                old_user = db.query(Users).filter(Users.id == old_responsible_user.userId).first()
-                if old_user:
-                    old_user.active = False
-                    db.add(old_user)
+        # Find the current responsible user for this company
+        current_responsible_user_record = db.query(CompanyUser).join(Users).filter(
+            CompanyUser.companyId == company_id,
+            Users.role == UserEnum.company
+        ).first()
 
-            # Add or update new responsible user
-            if not responsible_user:
-                new_user = Users(
-                    fullname=company_in.responsible_user.fullname,
-                    email=company_in.responsible_user.email,
-                    password=get_password_hash('deeptalentUser'),
-                    phone=company_in.responsible_user.phone,
-                    role=UserEnum.company
-                )
-                db.add(new_user)
-                db.flush()  # Flush to get new user ID
-                responsible_user = new_user
+        if current_responsible_user_record:
+            current_responsible_user = db.query(Users).filter(Users.id == current_responsible_user_record.userId).first()
 
-            # Update the relationship in CompanyUser
-            new_company_user = CompanyUser(companyId=company_id, userId=responsible_user.id)
-            db.add(new_company_user)
+            # If the new responsible user is different from the current one, deactivate the old one and remove the CompanyUser record
+            if current_responsible_user and current_responsible_user.email != company_in.responsible_user.email:
+                # Deactivate the old responsible user
+                current_responsible_user.active = False
+                db.add(current_responsible_user)
+                
+                # Remove the old CompanyUser record
+                db.delete(current_responsible_user_record)
 
-        # Handle konempleo_responsible update (role = admin)
-        if company_in.konempleo_responsible:
-            admin_user = db.query(Users).filter(Users.id == company_in.konempleo_responsible).first()
-            if not admin_user or admin_user.role != UserEnum.admin:
-                raise HTTPException(status_code=400, detail="Invalid admin user")
+        # Create a new responsible user if they don't already exist
+        if not responsible_user:
+            new_user = Users(
+                fullname=company_in.responsible_user.fullname,
+                email=company_in.responsible_user.email,
+                password=get_password_hash('deeptalentUser'),
+                phone=company_in.responsible_user.phone,
+                role=UserEnum.company
+            )
+            db.add(new_user)
+            db.flush()  # Get the new user ID
+            responsible_user = new_user
 
-            # Update the previous konempleo_responsible user and deactivate them
-            old_konempleo = db.query(CompanyUser).filter(
-                CompanyUser.companyId == company_id, 
-                Users.role == UserEnum.admin
-            ).first()
-            if old_konempleo:
-                old_admin = db.query(Users).filter(Users.id == old_konempleo.userId).first()
-                if old_admin:
-                    old_admin.active = False
-                    db.add(old_admin)
+        # Add a new CompanyUser record for the new responsible user
+        new_company_user = CompanyUser(companyId=company_id, userId=responsible_user.id)
+        db.add(new_company_user)
 
-            # Add the new admin user as the konempleo_responsible
-            new_konempleo_user = CompanyUser(companyId=company_id, userId=admin_user.id)
-            db.add(new_konempleo_user)
+    # Handle konempleo_responsible update (role = admin)
+    if company_in.konempleo_responsible:
+        admin_user = db.query(Users).filter(Users.id == company_in.konempleo_responsible).first()
+        if not admin_user or admin_user.role != UserEnum.admin:
+            raise HTTPException(status_code=400, detail="Invalid admin user")
+
+        # Find the current konempleo_responsible record
+        current_konempleo_record = db.query(CompanyUser).join(Users).filter(
+            CompanyUser.companyId == company_id,
+            Users.role == UserEnum.admin
+        ).first()
+
+        # Remove the old CompanyUser record if it's different from the new one
+        if current_konempleo_record and current_konempleo_record.userId != company_in.konempleo_responsible:
+            db.delete(current_konempleo_record)
+
+        # Add a new CompanyUser record for the new konempleo_responsible
+        new_konempleo_user = CompanyUser(companyId=company_id, userId=admin_user.id)
+        db.add(new_konempleo_user)
 
     # Commit the changes
     db.commit()
     db.refresh(company)
 
     return company
+
 
 
 

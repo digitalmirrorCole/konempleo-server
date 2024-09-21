@@ -24,6 +24,12 @@ class UserCreateDTO(BaseModel):
     role: Optional[UserEnum] = 4
     phone: Optional[str] = None
 
+class UserUpdateDTO(BaseModel):
+    fullname: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    role: Optional[UserEnum] = None
+
 class UserInsert(BaseModel):
     fullname: str
     email: EmailStr

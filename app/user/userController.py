@@ -1,15 +1,15 @@
 from sqlite3 import IntegrityError
 import traceback
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_password_hash, get_user_current
 from app.user.userService import userServices
-from app.user.userDTO import User, UserAdminCreateDTO, UserCreateDTO, UserInsert
+from app.user.userDTO import User, UserAdminCreateDTO, UserCreateDTO, UserInsert, UserUpdateDTO
 from sqlalchemy.orm import Session
 from app import deps
 from typing import List
 
-from models.models import UserEnum
+from models.models import UserEnum, Users
 
 
 userRouter = APIRouter()
@@ -84,6 +84,44 @@ def create_user(
         db.rollback()
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="An error occurred while creating the user.")
+
+@userRouter.put("/user/{user_id}", response_model=None)
+def update_user(
+    user_id: int,
+    user_in: UserUpdateDTO = Body(...),
+    db: Session = Depends(deps.get_db),
+    userToken: UserToken = Depends(get_user_current)
+) -> dict:
+    """
+    Update an existing user in the database.
+    """
+    # Ensure only authorized users can update (e.g., super_admin or user themselves)
+    if userToken.role != UserEnum.super_admin and userToken.id != user_id:
+        raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
+
+    # Fetch the user by ID
+    user = db.query(Users).filter(Users.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Dynamically update fields if they are provided
+    fields_to_update = ['fullname', 'email', 'phone', 'role']
+    for field in fields_to_update:
+        value = getattr(user_in, field, None)
+        if value is not None:
+            setattr(user, field, value)
+
+    # Commit the changes
+    try:
+        db.commit()
+        db.refresh(user)
+        return {"msg": "User updated successfully"}
+    except IntegrityError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Error occurred while updating the user.")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="An error occurred while updating the user.")
 
 
 @userRouter.get("/users/", status_code=200, response_model=List[User])
