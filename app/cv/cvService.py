@@ -1,13 +1,17 @@
+from datetime import datetime
 from http.client import HTTPException
 import json
 import os
 import re
+import time
 from docx import Document
 from fastapi import UploadFile
 from openai import OpenAI
 from requests import Session
 import boto3
 import fitz
+import requests
+from requests.auth import HTTPBasicAuth
 
 
 from models.models import CVitae, VitaeOffer 
@@ -177,3 +181,53 @@ def process_file(file: UploadFile, companyId: int, offerId: int, db: Session):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+
+def fetch_background_check_result(job_id: str, cvitae_id: int, db: Session, retry_interval: int = 10, max_retries: int = 10):
+    """
+    Background task to fetch the background check result every `retry_interval` seconds
+    until a status different from "procesando" is returned or the `max_retries` is reached.
+    Saves the result after every retry attempt.
+    """
+    # Fetch the CVitae record by ID
+    cvitae = db.query(CVitae).filter(CVitae.Id == cvitae_id).first()
+    if not cvitae:
+        print(f"CVitae record with ID {cvitae_id} not found")
+        return
+
+    url_get = f"https://dash-board.tusdatos.co/api/results/{job_id}"
+
+    tusDatosUser= os.getenv("tusDatosUser")
+    tusDatosSecret= os.getenv("tusDatosSecret")
+    
+    for attempt in range(max_retries):
+        try:
+            # Make the GET request to fetch the background check result
+            response_get = requests.get(url_get, auth=HTTPBasicAuth(tusDatosUser, tusDatosSecret))
+            response_get.raise_for_status()
+            result_data = response_get.json()
+        except requests.RequestException as e:
+            print(f"Error fetching result for job ID {job_id}: {str(e)}")
+            return
+
+        # Extract relevant fields from the response
+        status = result_data.get("estado")
+        hallazgo = result_data.get("hallazgo")  # Findings from the response
+        
+        # Save the result, regardless of whether the status is "procesando"
+        cvitae.background_check = f"{hallazgo}"
+        cvitae.background_date = datetime.utcnow()  # Update the timestamp for when the background check is saved
+        db.commit()
+        
+        print(f"Attempt {attempt + 1}: Saved status and findings for CVitae ID {cvitae_id}. Status: {status}")
+
+        # If the status is no longer "procesando", exit the loop and stop retrying
+        if status != "procesando":
+            print(f"Background check completed for CVitae ID {cvitae_id}. Final Status: {status}")
+            return  # Exit after saving the final result
+
+        # Wait before the next attempt if status is still "procesando"
+        time.sleep(retry_interval)
+
+    # If max retries are reached and status is still "procesando"
+    print(f"Max retries reached. Background check for job ID {job_id} is still processing after {max_retries} attempts.")
+

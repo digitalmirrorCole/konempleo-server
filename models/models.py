@@ -94,6 +94,7 @@ class CVitae(Base):
     candidate_mail = Column(String)
     candidate_city = Column(String)
     background_check = Column(String)
+    tusdatos_id = Column(String)
     companyId = Column(Integer, ForeignKey('company.id'), nullable=False)
 
     vitae_company = relationship('Company', back_populates='company_cvs')
