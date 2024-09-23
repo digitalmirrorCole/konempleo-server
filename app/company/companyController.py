@@ -1,18 +1,15 @@
 
 from typing import List, Optional
 from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
-from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_password_hash, get_user_current
 from app.company.companyDTO import Company, CompanyCreate, CompanyUpdate, CompanyWCount
 from sqlalchemy.orm import Session
-from app.company.companyService import company, upload_picture_to_s3
+from app.company.companyService import upload_picture_to_s3
 from app import deps
 from models.models import CVitae, CompanyUser, UserEnum, Users
 from models.models import Company as CompanyModel
-
-
 
 companyRouter = APIRouter()
 companyRouter.tags = ['Company']
@@ -29,8 +26,8 @@ fields_to_update = [
 
 @companyRouter.post("/company/", status_code=201, response_model=Company)
 def create_company(
-    *, company_in: CompanyCreate= Body(...), 
-    ## picture: Optional[UploadFile] = File(None),
+    *, company_in: CompanyCreate = Body(...), 
+    picture: Optional[UploadFile] = File(None),
     db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
 ) -> dict:
     """
@@ -43,32 +40,27 @@ def create_company(
     activeState = userToken.role == UserEnum.super_admin
 
     try:
+        # Step 1: Insert user
         user = Users(
-            fullname= company_in.responsible_user.fullname,
-            email= company_in.responsible_user.email,
-            password= get_password_hash('deeptalentUser'),
-            phone= company_in.responsible_user.phone,
-            role= 3
+            fullname=company_in.responsible_user.fullname,
+            email=company_in.responsible_user.email,
+            password=get_password_hash('deeptalentUser'),
+            phone=company_in.responsible_user.phone,
+            role=3
         )
-        
         db.add(user)
         db.flush()
 
-        ## picture_url = upload_picture_to_s3(picture)
-        picture_url = 'aqui iria la url generada por s3'
-
-        konempleo_userId = company_in.konempleo_responsible 
-
+        # Step 2: Insert company
+        konempleo_userId = company_in.konempleo_responsible
         company_data = company_in.dict()
-        # company_data.pop('konempleo_responsible', None)
         company_data.pop('responsible_user', None)
         company = CompanyModel(**company_data)
-
-        company.picture = picture_url
         company.active = activeState
         db.add(company)
         db.flush()
 
+        # Step 3: Insert company-user relationships
         company_user = CompanyUser(
             companyId=company.id,
             userId=user.id
@@ -80,15 +72,23 @@ def create_company(
         db.add(company_user)
         db.add(konempleo_user)
 
+        # Step 4: Commit the database transaction
         db.commit()
         db.refresh(company)
+
+        # Step 5: Upload picture to S3 after database transaction is successful
+        if picture:
+            picture_url = upload_picture_to_s3(picture, company_in.name)
+            company.picture = picture_url
+            db.commit()  # Commit the update to store the picture URL
 
         return company
 
     except Exception as e:
-        # If any operation fails, the transaction is rolled back automatically
+        # If any operation fails, rollback the transaction
         db.rollback()
         raise HTTPException(status_code=500, detail=f"An error occurred while creating the company: {str(e)}")
+
     
 @companyRouter.put("/company/{company_id}", response_model=Company)
 def update_company(
