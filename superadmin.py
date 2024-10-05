@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import authService
 from db.session import SessionLocal
-from models.user import UserEnum, Users
+from models.models import UserEnum, Users
 
 def create_superadmin(email: str, password: str,):
     db: Session = SessionLocal()

@@ -18,6 +18,11 @@ class UserAdminCreateDTO(BaseModel):
     role: UserEnum
     phone: Optional[str] = None
 
+class UserCreateResponseDTO(BaseModel):
+    fullname: str
+    email: str
+    role: UserEnum
+
 class UserCreateDTO(BaseModel):
     fullname: str
     email: EmailStr

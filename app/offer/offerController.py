@@ -7,7 +7,7 @@ from app.auth.authDTO import UserToken
 from app.auth.authService import get_user_current
 from app.deps import get_db
 from app.offer.offerDTO import Offer, OfferCreateDTO, OfferUpdateDTO, OfferWithVitaeCount
-from models.models import Company, CompanyOffer, OfferSkill, Skill, UserEnum, Users, VitaeOffer
+from models.models import Cargo, Company, CompanyOffer, OfferSkill, Skill, UserEnum, Users, VitaeOffer
 from models.models import Offer as OfferModel
 
 offerRouter = APIRouter()
@@ -25,7 +25,7 @@ def create_offer(
     Create a new offer and associate it with the provided skills and the offer owner.
     """
     # Ensure that the current user is a company user
-    if userToken.role != UserEnum.company:
+    if userToken.role not in [UserEnum.company_recruit, UserEnum.company]:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
     
     # Check if the company exists
@@ -33,11 +33,16 @@ def create_offer(
     company = db.query(Company).filter(Company.id == offerCompanyId).first()
     if not company:
         raise HTTPException(status_code=400, detail=f"Invalid company ID: {offer_in.companyId}")
+    
+    # Check if the company exists
+    offerCargoId = offer_in.cargoId
+    cargo = db.query(Cargo).filter(Cargo.id == offerCargoId).first()
+    if not cargo:
+        raise HTTPException(status_code=400, detail=f"Invalid cargo ID: {offer_in.companyId}")
 
-    # Check if the offer owner (user) exists
-    offer_owner_user = db.query(Users).filter(Users.id == offer_in.offer_owner).first()
-    if not offer_owner_user:
-        raise HTTPException(status_code=400, detail=f"Invalid offer owner user ID: {offer_in.offer_owner}")
+    # Check if the current active offers will exceed the total offers
+    if company.totaloffers + 1 > company.availableoffers:
+        raise HTTPException(status_code=400, detail="Cannot create new offer. Active offers exceed the total allowed offers for this company.") 
 
     # Prepare offer data
     offer_data = offer_in.dict()
@@ -46,7 +51,7 @@ def create_offer(
     try:
         # Create the Offer
         new_offer = OfferModel(**offer_data)
-        new_offer.offer_owner = offer_owner_user.id  # Associate the user as offer_owner
+        new_offer.offer_owner = userToken.id  # Associate the user as offer_owner
         db.add(new_offer)
         db.flush()  # Flush to get the new offer's ID
 
@@ -62,6 +67,12 @@ def create_offer(
         # Associate the offer with the company
         company_offer = CompanyOffer(offerId=new_offer.id, companyId=offerCompanyId)
         db.add(company_offer)
+
+        # Increment the company's activeoffers
+        company.activeoffers += 1
+        company.totaloffers += 1
+        company.availableoffers = company.availableoffers -1
+        db.add(company)
 
         # Commit the transaction to save everything
         db.commit()
@@ -79,10 +90,46 @@ def create_offer(
         raise HTTPException(status_code=500, detail=f"An error occurred while creating the offer: {str(e)}")
 
 
+
 @offerRouter.put("/offers/{offer_id}", response_model=Offer)
-def update_offer(offer_id: int, offer: OfferUpdateDTO, db: Session = Depends(get_db), userToken: UserToken = Depends(get_user_current)):
-    # Logic to update an offer
-    pass
+def update_offer(
+    offer_id: int,
+    offer_update: OfferUpdateDTO,
+    db: Session = Depends(get_db),
+    userToken: UserToken = Depends(get_user_current)
+):
+    """
+    Update specific fields in an offer: assigned_cvs, whatsapp_message, and disabled status.
+    """
+
+    # Ensure that the current user is a company user
+    if userToken.role not in [UserEnum.company_recruit, UserEnum.company]:
+        raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
+
+    # Fetch the offer by ID
+    offer = db.query(OfferModel).filter(OfferModel.id == offer_id).first()
+    if not offer:
+        raise HTTPException(status_code=404, detail="Offer not found")
+
+    try:
+        # Update the allowed fields if they are provided
+        if offer_update.assigned_cvs is not None:
+            offer.assigned_cvs = offer_update.assigned_cvs
+        if offer_update.whatsapp_message is not None:
+            offer.whatsapp_message = offer_update.whatsapp_message
+        if offer_update.disabled is not None:
+            offer.disabled = offer_update.disabled
+
+        # Commit the updates to the database
+        db.commit()
+        db.refresh(offer)
+
+        return offer
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"An error occurred while updating the offer: {str(e)}")
+
 
 @offerRouter.get("/offers/company/details/{company_id}", response_model=List[OfferWithVitaeCount])
 def get_offers_by_company(company_id: int, db: Session = Depends(get_db), userToken: UserToken = Depends(get_user_current)):
@@ -100,16 +147,16 @@ def get_offers_by_company(company_id: int, db: Session = Depends(get_db), userTo
 
     # Query offers associated with the company and count associated VitaeOffer records
     offers_with_vitae_count = db.query(
-        Offer, 
+        OfferModel, 
         func.count(VitaeOffer.id).label('vitae_offer_count')
     ).join(
-        CompanyOffer, CompanyOffer.offerId == Offer.id
+        CompanyOffer, CompanyOffer.offerId == OfferModel.id
     ).outerjoin(
-        VitaeOffer, VitaeOffer.offerId == Offer.id
+        VitaeOffer, VitaeOffer.offerId == OfferModel.id
     ).filter(
         CompanyOffer.companyId == company_id
     ).group_by(
-        Offer.id
+        OfferModel.id
     ).all()
 
     # Format the response with the offer data and vitae_offer_count
@@ -121,8 +168,8 @@ def get_offers_by_company(company_id: int, db: Session = Depends(get_db), userTo
     
     return result
 
-@offerRouter.get("/offers/owner/{offer_owner}", response_model=List[OfferWithVitaeCount])
-def get_offers_by_owner(offer_owner: int, db: Session = Depends(get_db), userToken: UserToken = Depends(get_user_current)):
+@offerRouter.get("/offers/owner/", response_model=List[OfferWithVitaeCount])
+def get_offers_by_owner(db: Session = Depends(get_db), userToken: UserToken = Depends(get_user_current)):
     """
     Get offers for a given offer owner and count the number of associated VitaeOffer records for each offer.
     """
@@ -130,22 +177,24 @@ def get_offers_by_owner(offer_owner: int, db: Session = Depends(get_db), userTok
     # Ensure only super_admin or company users can access this
     if userToken.role not in [UserEnum.super_admin, UserEnum.company]:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
+    
+    current_user_id = userToken.id
 
     # Check if the offer owner exists
-    owner = db.query(Users).filter(Users.id == offer_owner).first()
+    owner = db.query(Users).filter(Users.id == current_user_id).first()
     if not owner:
         raise HTTPException(status_code=404, detail="Offer owner not found")
 
     # Query offers associated with the given offer_owner and count associated VitaeOffer records
     offers_with_vitae_count = db.query(
-        Offer, 
+        OfferModel, 
         func.count(VitaeOffer.id).label('vitae_offer_count')
     ).outerjoin(
-        VitaeOffer, VitaeOffer.offerId == Offer.id
+        VitaeOffer, VitaeOffer.offerId == OfferModel.id
     ).filter(
-        Offer.offer_owner == offer_owner
+        OfferModel.offer_owner == current_user_id
     ).group_by(
-        Offer.id
+        OfferModel.id
     ).all()
 
     # Format the response with the offer data and vitae_offer_count

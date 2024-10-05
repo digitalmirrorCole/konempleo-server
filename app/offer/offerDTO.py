@@ -26,7 +26,6 @@ class OfferBase(BaseModel):
     cargoId: Optional[int] = None
     filter_questions: Optional[str] = None
     assigned_cvs: Optional[int] = 0
-    offer_owner: Optional[int] = None
     whatsapp_message: Optional[str] = None
 
 # DTO for creating an Offer
@@ -35,28 +34,14 @@ class OfferCreateDTO(OfferBase):
     pass
 
 class OfferWithVitaeCount(OfferBase):
+    id: int
     vitae_offer_count: int
 
 # DTO for updating an Offer
 class OfferUpdateDTO(BaseModel):
-    name: Optional[str] = None
-    duties: Optional[str] = None
-    exp_area: Optional[str] = None
-    vacants: Optional[int] = None
-    contract_type: Optional[contractEnum] = None
-    salary: Optional[str] = None
-    city: Optional[int] = None
-    shift: Optional[shiftEnum] = None
-    gender: Optional[genderEnum] = None
-    military_notebook: Optional[militaryEnum] = None
-    age: Optional[str] = None
-    job_type: Optional[str] = None
-    license: Optional[licenseEnum] = None
+    assigned_cvs: Optional[int] = None
+    whatsapp_message: Optional[str] = None
     disabled: Optional[bool] = None
-    experience_years: Optional[int] = None
-    offer_type: Optional[str] = None
-    ed_required: Optional[educationEnum] = None
-    cargoId: Optional[int] = None
 
 class OfferSoftDelete(BaseModel):
     active: bool

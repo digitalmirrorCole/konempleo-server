@@ -4,18 +4,18 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_password_hash, get_user_current
 from app.user.userService import userServices
-from app.user.userDTO import User, UserAdminCreateDTO, UserCreateDTO, UserInsert, UserUpdateDTO
+from app.user.userDTO import User, UserAdminCreateDTO, UserCreateDTO, UserCreateResponseDTO, UserInsert, UserUpdateDTO
 from sqlalchemy.orm import Session
 from app import deps
 from typing import List
 
-from models.models import UserEnum, Users
+from models.models import CompanyUser, UserEnum, Users
 
 
 userRouter = APIRouter()
 userRouter.tags = ['User']
 
-@userRouter.post("/user/admin/", status_code=201, response_model=None)
+@userRouter.post("/user/admin/", status_code=201, response_model=UserCreateResponseDTO)
 def create_user(
     *, user_in: UserAdminCreateDTO, db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
 ) -> dict:
@@ -25,6 +25,10 @@ def create_user(
     """  
     if userToken.role != UserEnum.super_admin :
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
+    
+    if user_in.role not in [UserEnum.super_admin, UserEnum.admin]:
+        raise HTTPException(status_code=400, detail="The user role must be either super_admin or admin.")
+    
     try:
         # Attempt to create the user
         user = userServices.create(
@@ -141,3 +145,29 @@ def get_users(
     except Exception as e:
         print(f"Error occurred in create_user function: {str(e)}")
         raise HTTPException(status_code=500, detail="Error Fetching the clients")
+
+@userRouter.get("/users/company/{company_id}", status_code=200, response_model=List[User])
+def get_users_by_company(
+    company_id: int, 
+    db: Session = Depends(deps.get_db), 
+    userToken: UserToken = Depends(get_user_current)
+) -> dict:
+    """
+    Get all users associated with a given company.
+    """
+    # Check if the requesting user has the required permissions
+    if userToken.role not in [UserEnum.super_admin, UserEnum.company]:
+        raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
+
+    try:
+        # Query to get all users related to the given company
+        users = db.query(Users).join(CompanyUser).filter(CompanyUser.companyId == company_id).all()
+
+        if not users:
+            raise HTTPException(status_code=404, detail=f"No users found for company ID: {company_id}")
+
+        return users
+
+    except Exception as e:
+        print(f"Error occurred while fetching users for company ID {company_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching users for the company")

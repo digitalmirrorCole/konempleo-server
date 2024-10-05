@@ -2,48 +2,55 @@ from concurrent.futures import ThreadPoolExecutor
 from http.client import HTTPException
 import os
 from typing import List
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile, FastAPI, BackgroundTasks
 from requests import Session
 
-from app.cv.cvService import fetch_background_check_result, process_file
+from app.cv.cvService import fetch_background_check_result, process_batch
 from app.deps import get_db
-from models.models import Company, Offer
+from models.models import Company, Offer, CVitae, OfferSkill, Skill
+import requests
+from requests.auth import HTTPBasicAuth
+from datetime import datetime
 
 cvRouter = APIRouter()
 cvRouter.tags = ['CV']
 
 @cvRouter.post("/offers/upload-cvs/", status_code=201, response_model=None)
-def upload_cvs(companyId: int, offerId: int, files: List[UploadFile] = File(...), db: Session = Depends(get_db)):
+def upload_cvs(
+    companyId: int, 
+    offerId: int, 
+    files: List[UploadFile] = File(...), 
+    db: Session = Depends(get_db)
+):
     """
-    Uploads CV files, extracts text, uploads to S3, processes with OpenAI, and saves the data.
+    Upload CV files, process in batches of 10, analyze with GPT-4-turbo-128k, and save results.
     """
     company = db.query(Company).filter(Company.id == companyId).first()
     offer = db.query(Offer).filter(Offer.id == offerId).first()
-    """ if not company or not offer:
-        raise HTTPException(status_code=404, detail="Company or Offer not found") """
+
+    if not company or not offer:
+        raise HTTPException(status_code=404, detail="Company or Offer not found")
+
+    # Fetch the offer skills
+    offer_skills = db.query(Skill).join(OfferSkill).filter(OfferSkill.offerId == offerId).all()
+    if not offer_skills:
+        raise HTTPException(status_code=404, detail="No skills found for the given offer.")
+    skills_list = [skill.name for skill in offer_skills]
+
+    # Split files into batches of 10
+    file_batches = [files[i:i+10] for i in range(0, len(files), 10)]
 
     with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(process_file, file, companyId, offerId, db) for file in files]
+        futures = [executor.submit(process_batch, batch, companyId, offerId, skills_list, db) for batch in file_batches]
 
+    # Wait for all batches to complete
     for future in futures:
         future.result()
 
     return {"detail": "All files processed successfully"}
 
-from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException
-from sqlalchemy.orm import Session
-import requests
-from requests.auth import HTTPBasicAuth
-from datetime import datetime
-import time
 
-app = FastAPI()
-
-# Assuming you have your model and dependencies already set up
-from models import CVitae
-from deps import get_db
-
-@app.get("/background-check/{cvitae_id}")
+@cvRouter.get("/background-check/{cvitae_id}")
 async def background_check(cvitae_id: int, db: Session = Depends(get_db), background_tasks: BackgroundTasks = BackgroundTasks()):
     """
     Perform a background check for a CVitae record using TusDatos API.

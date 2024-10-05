@@ -39,17 +39,18 @@ def upgrade() -> None:
     op.create_table('company',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(), nullable=False),
-    sa.Column('document', sa.String(), nullable=False),
+    sa.Column('document', sa.String(), nullable=False, unique=True),  # Add unique=True here
     sa.Column('document_type', sa.String(), nullable=False),
     sa.Column('sector', sa.String(), nullable=True),
     sa.Column('city', sa.String(), nullable=True),
     sa.Column('picture', sa.String(), nullable=True),
-    sa.Column('activeoffers', sa.Integer(), nullable=False, server_default=sa.text('0')),
     sa.Column('totaloffers', sa.Integer(), nullable=False, server_default=sa.text('0')),
+    sa.Column('activeoffers', sa.Integer(), nullable=False, server_default=sa.text('0')),
+    sa.Column('availableoffers', sa.Integer(), nullable=False, server_default=sa.text('0')),
     sa.Column('active', sa.Boolean(), nullable=False, default=True),
     sa.Column('employees', sa.Integer(), nullable=False, server_default=sa.text('0')),
     sa.PrimaryKeyConstraint('id')
-    )
+)
     op.create_table('skills',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(), nullable=False),

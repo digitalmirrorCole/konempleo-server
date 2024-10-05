@@ -27,7 +27,7 @@ class CompanyCreate(BaseModel):
     activeoffers: Optional[int] = 0
     totaloffers: Optional[int] = 0
     employees: Optional[int] = 0
-    konempleo_responsible = int
+    konempleo_responsible: int
     responsible_user: UserCreateDTO
 
 class CompanyUpdate(BaseModel,extra = Extra.forbid):

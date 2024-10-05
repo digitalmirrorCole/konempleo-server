@@ -1,6 +1,7 @@
 
+import json
 from typing import List, Optional
-from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_password_hash, get_user_current
@@ -26,7 +27,7 @@ fields_to_update = [
 
 @companyRouter.post("/company/", status_code=201, response_model=Company)
 def create_company(
-    *, company_in: CompanyCreate = Body(...), 
+    *, company_in: str = Form(...), 
     picture: Optional[UploadFile] = File(None),
     db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
 ) -> dict:
@@ -34,33 +35,44 @@ def create_company(
     Create a new company in the database.
     """
 
+    company_create = json.loads(company_in)  # Parse the form-data string into a dictionary
+    company_in = CompanyCreate(**company_create)
+
     if userToken.role not in [UserEnum.super_admin, UserEnum.admin]:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
     
     activeState = userToken.role == UserEnum.super_admin
 
     try:
-        # Step 1: Insert user
+        # Step 1: Insert user (responsible_user)
         user = Users(
             fullname=company_in.responsible_user.fullname,
             email=company_in.responsible_user.email,
             password=get_password_hash('deeptalentUser'),
             phone=company_in.responsible_user.phone,
-            role=3
+            role=3  # Assuming this is the "company" user role
         )
         db.add(user)
         db.flush()
 
-        # Step 2: Insert company
+        # Step 2: Prepare and insert company data
         konempleo_userId = company_in.konempleo_responsible
+
+        # Convert company_in to a dictionary
         company_data = company_in.dict()
+
+        # Remove unnecessary fields from the company data
+        company_data.pop('konempleo_responsible', None)
         company_data.pop('responsible_user', None)
+
+        # Step 3: Insert the company record
         company = CompanyModel(**company_data)
         company.active = activeState
+
         db.add(company)
         db.flush()
 
-        # Step 3: Insert company-user relationships
+        # Step 4: Insert company-user relationships
         company_user = CompanyUser(
             companyId=company.id,
             userId=user.id
@@ -72,15 +84,18 @@ def create_company(
         db.add(company_user)
         db.add(konempleo_user)
 
-        # Step 4: Commit the database transaction
+        # Step 5: Commit the database transaction first
         db.commit()
         db.refresh(company)
 
-        # Step 5: Upload picture to S3 after database transaction is successful
+        # Step 6: Upload picture to S3 after database transaction is successful
         if picture:
-            picture_url = upload_picture_to_s3(picture, company_in.name)
-            company.picture = picture_url
-            db.commit()  # Commit the update to store the picture URL
+            try:
+                picture_url = upload_picture_to_s3(picture, company_in.name)
+                company.picture = picture_url
+                db.commit()  # Commit the update to store the picture URL
+            except Exception as e:
+                print(f"Warning: Failed to upload picture to S3. Reason: {str(e)}")
 
         return company
 
@@ -102,7 +117,7 @@ def update_company(
     """
 
     # Check if the user has sufficient permissions
-    if userToken.role not in [UserEnum.super_admin]:
+    if userToken.role not in [UserEnum.super_admin, UserEnum.admin]:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
 
     # Fetch the company by ID
@@ -181,8 +196,6 @@ def update_company(
     db.refresh(company)
 
     return company
-
-
 
 
 @companyRouter.get("/company/owned/", status_code=200, response_model=List[CompanyWCount])
