@@ -86,6 +86,7 @@ class CVitae(Base):
     Id = Column(Integer, primary_key=True)
     url = Column(String)
     size = Column(Float)
+    cvtext = Column(Text)
     extension = Column(String)
     active = Column(Boolean, default=True)
     candidate_dni = Column(String)

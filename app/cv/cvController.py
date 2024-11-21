@@ -1,8 +1,7 @@
-from concurrent.futures import ThreadPoolExecutor
-from http.client import HTTPException
+from concurrent.futures import ThreadPoolExecutor 
 import os
 from typing import List
-from fastapi import APIRouter, Depends, File, UploadFile, FastAPI, BackgroundTasks
+from fastapi import APIRouter, Depends, File, UploadFile, FastAPI, BackgroundTasks, HTTPException
 from requests import Session
 
 from app.cv.cvService import fetch_background_check_result, process_batch
@@ -20,30 +19,43 @@ def upload_cvs(
     companyId: int, 
     offerId: int, 
     files: List[UploadFile] = File(...), 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db)  # Pass an active session here
 ):
-    """
-    Upload CV files, process in batches of 10, analyze with GPT-4-turbo-128k, and save results.
-    """
     company = db.query(Company).filter(Company.id == companyId).first()
     offer = db.query(Offer).filter(Offer.id == offerId).first()
 
     if not company or not offer:
         raise HTTPException(status_code=404, detail="Company or Offer not found")
 
-    # Fetch the offer skills
     offer_skills = db.query(Skill).join(OfferSkill).filter(OfferSkill.offerId == offerId).all()
     if not offer_skills:
         raise HTTPException(status_code=404, detail="No skills found for the given offer.")
     skills_list = [skill.name for skill in offer_skills]
 
-    # Split files into batches of 10
+    city_offer = offer.city
+    age_offer = offer.age
+    genre_offer = offer.gender
+    experience_offer = offer.experience_years
+
     file_batches = [files[i:i+10] for i in range(0, len(files), 10)]
 
     with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(process_batch, batch, companyId, offerId, skills_list, db) for batch in file_batches]
+        futures = [
+            executor.submit(
+                process_batch, 
+                batch, 
+                companyId, 
+                offerId, 
+                skills_list, 
+                city_offer, 
+                age_offer, 
+                genre_offer, 
+                experience_offer, 
+                db  # Pass the active session directly
+            ) 
+            for batch in file_batches
+        ]
 
-    # Wait for all batches to complete
     for future in futures:
         future.result()
 

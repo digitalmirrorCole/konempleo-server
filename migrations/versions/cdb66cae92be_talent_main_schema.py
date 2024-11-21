@@ -66,6 +66,7 @@ def upgrade() -> None:
     sa.Column('url', sa.String(), nullable=True),
     sa.Column('size', sa.Float(), nullable=True),
     sa.Column('extension', sa.String(), nullable=True),
+    sa.Column('cvtext', sa.Text(), nullable=True),
     sa.Column('active', sa.Boolean(), nullable=True),
     sa.Column('candidate_dni', sa.String(), nullable=True),
     sa.Column('candidate_dni_type', sa.String(), nullable=True),
