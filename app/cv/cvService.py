@@ -27,7 +27,7 @@ from models.models import CVitae, VitaeOffer
 BUCKET_NAME = "your_s3_bucket_name"
 
 # Initialize EasyOCR reader once to avoid redundant instantiation
-openai.api_key =  os.getenv("OPENAI_API_KEY", "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")
+openai.api_key =  os.getenv("OPENAI_API_KEY", "")
 
 s3_client = boto3.client(
     's3',
