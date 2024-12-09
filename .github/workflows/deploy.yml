@@ -34,41 +34,41 @@ jobs:
           echo DB_PORT=$RDS_PORT >> app/.env
           echo DB_NAME="$RDS_NAME" >> app/.env
 
-      - name: Set up QEMU for x86_64
-        run: |
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-        if: runner.os == 'Linux'
-
-      - name: Set up Docker for x86_64
-        uses: docker/setup-qemu-action@v2
-        with:
-          platforms: linux/x86_64
-
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v3
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2
-
-      - name: Login to Amazon ECR
-        run: |
-          aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
-
-      - name: Build and push Docker image
-        run: |
-          docker build -t konempleo .
-
-      - name: Tag Docker image with ECS task definition
-        run: |
-          docker tag konempleo:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
-
-      - name: Push Docker image to ECR
-        run: |
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
+#      - name: Set up QEMU for x86_64
+#        run: |
+#          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+#        if: runner.os == 'Linux'
+#
+#      - name: Set up Docker for x86_64
+#        uses: docker/setup-qemu-action@v2
+#        with:
+#          platforms: linux/x86_64
+#
+#      - name: Set up Docker
+#        uses: docker/setup-buildx-action@v3
+#
+#      - name: Configure AWS credentials
+#        uses: aws-actions/configure-aws-credentials@v2
+#        with:
+#          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#          aws-region: us-east-2
+#
+#      - name: Login to Amazon ECR
+#        run: |
+#          aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+#
+#      - name: Build and push Docker image
+#        run: |
+#          docker build -t konempleo .
+#
+#      - name: Tag Docker image with ECS task definition
+#        run: |
+#          docker tag konempleo:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
+#
+#      - name: Push Docker image to ECR
+#        run: |
+#          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
 
       - name: Deploy to EC2 instance via SSH
         env:
@@ -77,8 +77,9 @@ jobs:
           echo "$PEM_KEY" > konempleo.pem
           chmod 400 konempleo.pem
           ssh -o StrictHostKeyChecking=no -i konempleo.pem -tt ec2-user@ec2-3-144-33-2.us-east-2.compute.amazonaws.com <<EOF
-          docker stop $(docker ps -a -q --filter="name=konempleo") || true
-          docker rm $(docker ps -a -q --filter="name=konempleo") || true
+          docker stop konempleo
+          docker rm konempleo
+          aws sts get-caller-identity
           aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
           docker pull ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
           docker run -d --name konempleo -p 8888:443 ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
