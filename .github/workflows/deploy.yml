@@ -70,13 +70,19 @@ jobs:
         run: |
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
 
+      - name: Add EC2 Host to Known Hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -t rsa ec2-3-144-33-2.us-east-2.compute.amazonaws.com >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
       - name: Deploy to EC2 instance via SSH
         env:
           PEM_KEY: ${{ secrets.AWS_PEM_KEY }}
         run: |
           echo "$PEM_KEY" > konempleo.pem
           chmod 400 konempleo.pem
-          ssh -i konempleo.pem -tt ec2-user@ec2-3-144-33-2.us-east-2.compute.amazonaws.com <<EOF
+          ssh -o StrictHostKeyChecking=no -i konempleo.pem -tt ec2-user@ec2-3-144-33-2.us-east-2.compute.amazonaws.com <<EOF
           export DOCKER_IMAGE=$(docker ps -a -q --filter="name=konempleo")
           docker stop $DOCKER_IMAGE
           docker rm $DOCKER_IMAGE
@@ -84,3 +90,4 @@ jobs:
           docker pull ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
           docker run -d --name konempleo -p 8888:443 ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
           EOF
+        shell: /usr/bin/bash -e {0}
