@@ -77,9 +77,8 @@ jobs:
           echo "$PEM_KEY" > konempleo.pem
           chmod 400 konempleo.pem
           ssh -o StrictHostKeyChecking=no -i konempleo.pem -tt ec2-user@ec2-3-144-33-2.us-east-2.compute.amazonaws.com <<EOF
-          export DOCKER_IMAGE=$(docker ps -a -q --filter="name=konempleo")
-          docker stop $DOCKER_IMAGE
-          docker rm $DOCKER_IMAGE
+          docker stop $(docker ps -a -q --filter="name=konempleo")
+          docker rm $(docker ps -a -q --filter="name=konempleo")
           aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
           docker pull ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
           docker run -d --name konempleo -p 8888:443 ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
