@@ -8,6 +8,7 @@ from app.offer.offerController import offerRouter
 from app.cv.cvController import cvRouter
 from app.cargo.cargoController import cargoRouter
 from app.skill.skillController import skillRouter
+from app.health.healthController import healthRouter
 
 description = """
 All these configurations are suggested in the doc and
@@ -41,3 +42,4 @@ app.include_router(offerRouter)
 app.include_router(cvRouter)
 app.include_router(cargoRouter)
 app.include_router(skillRouter)
+app.include_router(healthRouter)
