@@ -84,7 +84,7 @@ jobs:
           echo "Pulling docker"
           docker pull ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
           echo "Running docker"
-          docker run -d --name konempleo -p 8888:443 ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
+          docker run -d --name konempleo -p 443:8888 ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_BACKEND_IMAGE:latest
           echo "Docker running"
           exit
           EOF
