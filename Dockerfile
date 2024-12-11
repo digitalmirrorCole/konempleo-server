@@ -23,6 +23,9 @@ COPY ./app/.env /konempleo/db/.env
 # Set environment variable from .env file
 ENV $(cat /konempleo/app/.env)
 
+
+EXPOSE 80
+
 # Run Alembic migration
 CMD [ "alembic", "upgrade", "head" ]
 # RUN alembic upgrade head
