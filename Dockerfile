@@ -7,13 +7,7 @@ COPY ./requirements.txt /konempleo/requirements.txt
 RUN pip install --no-cache-dir -r /konempleo/requirements.txt
 
 # Copy the application code
-COPY ./app /konempleo/app
-COPY ./db /konempleo/db
-COPY ./migrations /konempleo/migrations
-COPY ./migrations/versions /konempleo/migrations/versions
-COPY ./models /konempleo/models
-COPY ./alembic.ini /konempleo/alembic.ini
-COPY ./README.md /konempleo/README.md
+COPY . /konempleo/
 
 # Copy the .env file
 COPY ./app/.env /konempleo/app/.env
