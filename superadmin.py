@@ -10,7 +10,7 @@ def create_superadmin(email: str, password: str,):
 
     # Check if a superadmin with the given email or username already exists
     existing_superadmin = db.query(Users).filter(
-        (Users.role == UserEnum.super_admin) | (Users.email == email)
+        (Users.role == UserEnum.super_admin) & (Users.email == email)
     ).first()
     if existing_superadmin:
         print("A user with these credentials already exists!")
