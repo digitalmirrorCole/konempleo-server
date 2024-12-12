@@ -33,6 +33,7 @@ jobs:
           echo DB_HOST="$RDS_HOST" >> app/.env
           echo DB_PORT=$RDS_PORT >> app/.env
           echo DB_NAME="$RDS_NAME" >> app/.env
+          echo ACCESS_TOKEN_EXPIRE_MINUTES=1440 >> app/.env
 
       - name: Set up QEMU for x86_64
         run: |
