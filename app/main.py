@@ -1,5 +1,6 @@
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 
 from app.company.companyController import companyRouter
 from app.user.userController import userRouter
@@ -16,6 +17,19 @@ are used in the OpenAPI specification and the automatic API docs UIs.
 
 This is a test of the description. 🚀
 """
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("fastapi_logs.log"),  # Log to a file
+        logging.StreamHandler()  # Also log to the console
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
 app = FastAPI(
     title='DeepTalent API',
     description=description,
@@ -32,6 +46,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    # Log request details
+    logger.info(f"New request: {request.method} {request.url}")
+    
+    # Call the next middleware or endpoint
+    response = await call_next(request)
+
+    # Log response status
+    logger.info(f"Response status: {response.status_code}")
+    
+    return response
 
 api_router = APIRouter()
 

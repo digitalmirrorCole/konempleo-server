@@ -3,3 +3,4 @@ apivenv
 __pycache__/
 .env
 settings.json
+fastapi_logs.log
