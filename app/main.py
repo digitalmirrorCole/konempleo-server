@@ -20,7 +20,7 @@ This is a test of the description. 🚀
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler("fastapi_logs.log"),  # Log to a file

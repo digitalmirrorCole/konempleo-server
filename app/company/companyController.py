@@ -259,7 +259,8 @@ def get_all_companies(
     ).all()
 
     if not companies_with_cv_count:
-        raise HTTPException(status_code=404, detail="No companies found.")
+        return []
+        # raise HTTPException(status_code=404, detail="No companies found.")
     
     # Format the response to include the company data along with the CV count
     result = []
