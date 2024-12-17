@@ -7,9 +7,9 @@ from app.user.userService import userServices
 from app.user.userDTO import User, UserAdminCreateDTO, UserCreateDTO, UserCreateResponseDTO, UserInsert, UserUpdateDTO
 from sqlalchemy.orm import Session
 from app import deps
-from typing import List
+from typing import List, Optional
 
-from models.models import CompanyUser, UserEnum, Users
+from models.models import Company, CompanyUser, UserEnum, Users
 
 
 userRouter = APIRouter()
@@ -17,20 +17,25 @@ userRouter.tags = ['User']
 
 @userRouter.post("/user/admin/", status_code=201, response_model=UserCreateResponseDTO)
 def create_user(
-    *, user_in: UserAdminCreateDTO, db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
+    *,
+    user_in: UserAdminCreateDTO, 
+    company_ids: Optional[List[int]] = None,  # Optional list of company IDs
+    db: Session = Depends(deps.get_db), 
+    userToken: UserToken = Depends(get_user_current)
 ) -> dict:
-    
     """
-    Create a new admin user in the database.
+    Create a new admin user in the database and optionally assign to companies.
     """  
-    if userToken.role != UserEnum.super_admin :
+    # Authorization check
+    if userToken.role != UserEnum.super_admin:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
     
+    # Role validation
     if user_in.role not in [UserEnum.super_admin, UserEnum.admin]:
         raise HTTPException(status_code=400, detail="The user role must be either super_admin or admin.")
     
     try:
-        # Attempt to create the user
+        # Step 1: Create the user
         user = userServices.create(
             db=db, 
             obj_in=UserInsert(**{
@@ -40,32 +45,57 @@ def create_user(
                 'role': user_in.role,
             })
         )
+
+        # Step 2: Validate company IDs and create CompanyUser records
+        if company_ids:
+            # Fetch existing companies from the DB
+            existing_companies = db.query(Company).filter(Company.id.in_(company_ids)).all()
+            existing_company_ids = {company.id for company in existing_companies}
+
+            # Check for invalid company IDs
+            invalid_ids = set(company_ids) - existing_company_ids
+            if invalid_ids:
+                raise HTTPException(status_code=404, detail=f"Companies with IDs {list(invalid_ids)} not found.")
+
+            # Create CompanyUser records
+            for company_id in existing_company_ids:
+                company_user = CompanyUser(
+                    companyId=company_id,
+                    userId=user.id
+                )
+                db.add(company_user)
+
+        db.commit()  # Commit the transaction after successful processing
+
         return user
-    
-    except IntegrityError as e:
-        # Handle database integrity errors (e.g., unique constraint violations)
-        db.rollback()  # Rollback the transaction to avoid partial inserts
+
+    except IntegrityError:
+        db.rollback()
         raise HTTPException(status_code=400, detail="User with this email already exists.")
     
     except Exception as e:
-        # Handle other unforeseen errors
-        print(f"Error occurred in create_user function: {str(e)}")
         db.rollback()
+        print(f"Error occurred in create_user function: {str(e)}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="An error occurred while creating the user.")
     
 @userRouter.post("/user/", status_code=201, response_model=None)
 def create_user(
-    *, user_in: UserCreateDTO, db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
+    *,
+    user_in: UserCreateDTO,
+    company_id: Optional[int] = None,  # Single optional company ID
+    db: Session = Depends(deps.get_db),
+    userToken: UserToken = Depends(get_user_current)
 ) -> dict:
-    
     """
-    Create a new user in the database.
+    Create a new user in the database and optionally assign to a company.
     """  
-    if userToken.role != UserEnum.company :
+    # Authorization check: Only 'company' role can create users
+    if userToken.role != UserEnum.company:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
+
     try:
-        # Attempt to create the user
+        # Step 1: Create the user
         user = userServices.create(
             db=db, 
             obj_in=UserInsert(**{
@@ -75,17 +105,32 @@ def create_user(
                 'role': UserEnum.company_recruit,
             })
         )
-        return user
-    
-    except IntegrityError as e:
-        # Handle database integrity errors (e.g., unique constraint violations)
-        db.rollback()  # Rollback the transaction to avoid partial inserts
+
+        # Step 2: Validate the company ID and create CompanyUser record
+        if company_id:
+            # Check if the company exists
+            company = db.query(Company).filter(Company.id == company_id).first()
+            if not company:
+                raise HTTPException(status_code=404, detail=f"Company with ID {company_id} not found.")
+
+            # Create CompanyUser record
+            company_user = CompanyUser(
+                companyId=company.id,
+                userId=user.id
+            )
+            db.add(company_user)
+
+        db.commit()  # Commit transaction after all operations succeed
+
+        return {"detail": "User created successfully."}
+
+    except IntegrityError:
+        db.rollback()
         raise HTTPException(status_code=400, detail="User with this email already exists.")
     
     except Exception as e:
-        # Handle other unforeseen errors
-        print(f"Error occurred in create_user function: {str(e)}")
         db.rollback()
+        print(f"Error occurred in create_user function: {str(e)}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="An error occurred while creating the user.")
 
