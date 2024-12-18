@@ -11,6 +11,7 @@ from app.company.companyService import upload_picture_to_s3
 from app import deps
 from models.models import CVitae, CompanyUser, UserEnum, Users
 from models.models import Company as CompanyModel
+from sqlalchemy.orm import aliased
 
 companyRouter = APIRouter()
 companyRouter.tags = ['Company']
@@ -244,29 +245,64 @@ def get_all_companies(
 ) -> List[CompanyWCount]:
     """
     Gets all companies in the database if the user is a super admin.
+    Includes the first active user with role type 2 (admin) and role type 3 (company_recruit).
     """
     if userToken.role != UserEnum.super_admin:
         raise HTTPException(status_code=403, detail="You do not have permission to view all companies.")
 
-    # Query to get all companies and count of CVitae records for each company
-    companies_with_cv_count = db.query(
+    # Aliases for Users: admin and recruiter
+    admin_user_alias = aliased(Users)
+    recruit_user_alias = aliased(Users)
+
+    # Query to fetch company details, CV count, first admin, and first recruiter
+    companies_with_details = db.query(
         CompanyModel,
-        func.count(CVitae.Id).label('cv_count')
+        func.count(CVitae.Id).label('cv_count'),
+        admin_user_alias.fullname.label("admin_name"),
+        admin_user_alias.email.label("admin_email"),
+        recruit_user_alias.fullname.label("recruiter_name"),
+        recruit_user_alias.email.label("recruiter_email")
     ).outerjoin(
         CVitae, CVitae.companyId == CompanyModel.id
+    ).outerjoin(
+        CompanyUser, CompanyUser.companyId == CompanyModel.id
+    ).outerjoin(
+        admin_user_alias, (admin_user_alias.id == CompanyUser.userId) & 
+                         (admin_user_alias.role == UserEnum.admin) & 
+                         (admin_user_alias.active == True)
+    ).outerjoin(
+        recruit_user_alias, (recruit_user_alias.id == CompanyUser.userId) & 
+                           (recruit_user_alias.role == UserEnum.company) & 
+                           (recruit_user_alias.active == True)
     ).group_by(
-        CompanyModel.id
+        CompanyModel.id,
+        admin_user_alias.fullname, admin_user_alias.email,
+        recruit_user_alias.fullname, recruit_user_alias.email
     ).all()
 
-    if not companies_with_cv_count:
+    if not companies_with_details:
         return []
-        # raise HTTPException(status_code=404, detail="No companies found.")
-    
-    # Format the response to include the company data along with the CV count
+
+    # Format the response
     result = []
-    for company, cv_count in companies_with_cv_count:
-        company_dict = company.__dict__.copy()
-        company_dict['cv_count'] = cv_count
-        result.append(CompanyWCount(**company_dict))
+    for company, cv_count, admin_name, admin_email, recruiter_name, recruiter_email in companies_with_details:
+        result.append(CompanyWCount(
+            id=company.id,
+            name=company.name,
+            sector=company.sector,
+            document=company.document,
+            document_type=company.document_type,
+            city=company.city,
+            picture=company.picture,
+            activeoffers=company.activeoffers,
+            totaloffers=company.totaloffers,
+            active=company.active,
+            employees=company.employees,
+            cv_count=cv_count,
+            admin_name=admin_name,
+            admin_email=admin_email,
+            recruiter_name=recruiter_name,
+            recruiter_email=recruiter_email
+        ))
     
     return result

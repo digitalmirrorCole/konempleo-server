@@ -57,6 +57,10 @@ class CompanyInDBBase(CompanyBase):
 class CompanyInDBBaseWCount(CompanyBase):
     id: int
     cv_count: int
+    admin_name: Optional[str] = None
+    admin_email: Optional[str] = None
+    recruiter_name: Optional[str] = None
+    recruiter_email: Optional[str] = None
 
     class Config:
         orm_mode: True
