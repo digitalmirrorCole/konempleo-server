@@ -38,6 +38,7 @@ class CompanyUpdate(BaseModel,extra = Extra.forbid):
     city: Optional[str] = None
     employees: Optional[int] = None
     activeoffers: Optional[int] = None
+    availableoffers: Optional[int] = None
     totaloffers: Optional[int] = None
     konempleo_responsible: Optional[int] = None
     responsible_user: Optional[UserCreateDTO] = None

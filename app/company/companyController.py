@@ -295,6 +295,7 @@ def get_all_companies(
             city=company.city,
             picture=company.picture,
             activeoffers=company.activeoffers,
+            availableoffers=company.availableoffers,
             totaloffers=company.totaloffers,
             active=company.active,
             employees=company.employees,
