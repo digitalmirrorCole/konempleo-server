@@ -205,3 +205,41 @@ def get_offers_by_owner(db: Session = Depends(get_db), userToken: UserToken = De
         result.append(OfferWithVitaeCount(**offer_dict))
     
     return result
+
+@offerRouter.get("/offers/details/{offer_id}", response_model=OfferWithVitaeCount)
+def get_offer_by_id(
+    offer_id: int, 
+    db: Session = Depends(get_db), 
+    userToken: UserToken = Depends(get_user_current)
+) -> OfferWithVitaeCount:
+    """
+    Get a specific offer by its ID and count the associated VitaeOffer records.
+    """
+
+    # Check user permissions
+    if userToken.role not in [UserEnum.super_admin, UserEnum.company]:
+        raise HTTPException(status_code=403, detail="You do not have permission to view this offer.")
+
+    # Query to fetch the offer and count associated VitaeOffer records
+    offer_with_vitae_count = db.query(
+        OfferModel,
+        func.count(VitaeOffer.id).label("vitae_offer_count")
+    ).outerjoin(
+        VitaeOffer, VitaeOffer.offerId == OfferModel.id
+    ).filter(
+        OfferModel.id == offer_id
+    ).group_by(
+        OfferModel.id
+    ).first()
+
+    if not offer_with_vitae_count:
+        raise HTTPException(status_code=404, detail="Offer not found")
+
+    # Unpack the query result
+    offer, vitae_offer_count = offer_with_vitae_count
+
+    # Prepare the response
+    offer_dict = offer.__dict__.copy()  # Convert the offer object to a dictionary
+    offer_dict["vitae_offer_count"] = vitae_offer_count
+
+    return OfferWithVitaeCount(**offer_dict)

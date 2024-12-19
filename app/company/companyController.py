@@ -250,60 +250,94 @@ def get_all_companies(
     if userToken.role != UserEnum.super_admin:
         raise HTTPException(status_code=403, detail="You do not have permission to view all companies.")
 
-    # Aliases for Users: admin and recruiter
-    admin_user_alias = aliased(Users)
-    recruit_user_alias = aliased(Users)
+    # Subquery for first admin user
+    admin_subquery = db.query(
+        CompanyUser.companyId.label("company_id"),
+        Users.fullname.label("admin_name"),
+        Users.email.label("admin_email"),
+        func.row_number().over(
+            partition_by=CompanyUser.companyId, 
+            order_by=Users.id
+        ).label("row_number")
+    ).join(
+        Users, Users.id == CompanyUser.userId
+    ).filter(
+        Users.role == UserEnum.admin,
+        Users.active == True
+    ).subquery()
 
-    # Query to fetch company details, CV count, first admin, and first recruiter
+    # Subquery for first recruiter user
+    recruiter_subquery = db.query(
+        CompanyUser.companyId.label("company_id"),
+        Users.fullname.label("recruiter_name"),
+        Users.email.label("recruiter_email"),
+        func.row_number().over(
+            partition_by=CompanyUser.companyId, 
+            order_by=Users.id
+        ).label("row_number")
+    ).join(
+        Users, Users.id == CompanyUser.userId
+    ).filter(
+        Users.role == UserEnum.company_recruit,
+        Users.active == True
+    ).subquery()
+
+    # Main query
     companies_with_details = db.query(
         CompanyModel,
         func.count(CVitae.Id).label('cv_count'),
-        admin_user_alias.fullname.label("admin_name"),
-        admin_user_alias.email.label("admin_email"),
-        recruit_user_alias.fullname.label("recruiter_name"),
-        recruit_user_alias.email.label("recruiter_email")
+        admin_subquery.c.admin_name,
+        admin_subquery.c.admin_email,
+        recruiter_subquery.c.recruiter_name,
+        recruiter_subquery.c.recruiter_email
     ).outerjoin(
         CVitae, CVitae.companyId == CompanyModel.id
     ).outerjoin(
-        CompanyUser, CompanyUser.companyId == CompanyModel.id
+        admin_subquery, (admin_subquery.c.company_id == CompanyModel.id) & 
+                        (admin_subquery.c.row_number == 1)
     ).outerjoin(
-        admin_user_alias, (admin_user_alias.id == CompanyUser.userId) & 
-                         (admin_user_alias.role == UserEnum.admin) & 
-                         (admin_user_alias.active == True)
-    ).outerjoin(
-        recruit_user_alias, (recruit_user_alias.id == CompanyUser.userId) & 
-                           (recruit_user_alias.role == UserEnum.company) & 
-                           (recruit_user_alias.active == True)
+        recruiter_subquery, (recruiter_subquery.c.company_id == CompanyModel.id) & 
+                            (recruiter_subquery.c.row_number == 1)
     ).group_by(
         CompanyModel.id,
-        admin_user_alias.fullname, admin_user_alias.email,
-        recruit_user_alias.fullname, recruit_user_alias.email
+        admin_subquery.c.admin_name, admin_subquery.c.admin_email,
+        recruiter_subquery.c.recruiter_name, recruiter_subquery.c.recruiter_email
     ).all()
 
     if not companies_with_details:
         return []
 
-    # Format the response
-    result = []
+    # Combine results into a single entry per company
+    result_dict = {}
     for company, cv_count, admin_name, admin_email, recruiter_name, recruiter_email in companies_with_details:
-        result.append(CompanyWCount(
-            id=company.id,
-            name=company.name,
-            sector=company.sector,
-            document=company.document,
-            document_type=company.document_type,
-            city=company.city,
-            picture=company.picture,
-            activeoffers=company.activeoffers,
-            availableoffers=company.availableoffers,
-            totaloffers=company.totaloffers,
-            active=company.active,
-            employees=company.employees,
-            cv_count=cv_count,
-            admin_name=admin_name,
-            admin_email=admin_email,
-            recruiter_name=recruiter_name,
-            recruiter_email=recruiter_email
-        ))
-    
-    return result
+        if company.id not in result_dict:
+            result_dict[company.id] = CompanyWCount(
+                id=company.id,
+                name=company.name,
+                sector=company.sector,
+                document=company.document,
+                document_type=company.document_type,
+                city=company.city,
+                picture=company.picture,
+                activeoffers=company.activeoffers,
+                availableoffers=company.availableoffers,
+                totaloffers=company.totaloffers,
+                active=company.active,
+                employees=company.employees,
+                cv_count=cv_count,
+                admin_name=admin_name,
+                admin_email=admin_email,
+                recruiter_name=recruiter_name,
+                recruiter_email=recruiter_email
+            )
+        else:
+            # Update recruiter or admin data if it was missing in previous rows
+            if not result_dict[company.id].admin_name and admin_name:
+                result_dict[company.id].admin_name = admin_name
+                result_dict[company.id].admin_email = admin_email
+            if not result_dict[company.id].recruiter_name and recruiter_name:
+                result_dict[company.id].recruiter_name = recruiter_name
+                result_dict[company.id].recruiter_email = recruiter_email
+
+    # Convert dictionary to a list of results
+    return list(result_dict.values())
