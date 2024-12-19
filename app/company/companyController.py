@@ -56,17 +56,19 @@ def create_company(
         db.add(user)
         db.flush()
 
-        # Step 2: Prepare and insert company data
-        konempleo_userId = company_in.konempleo_responsible
+        # Step 2: Validate konempleo_responsible
+        konempleo_user = db.query(Users).filter(Users.id == company_in.konempleo_responsible).first()
+        if not konempleo_user or konempleo_user.role != UserEnum.admin:
+            raise HTTPException(status_code=400, detail="The konempleo_responsible user must have the admin role.")
 
-        # Convert company_in to a dictionary
+        # Step 3: Prepare and insert company data
         company_data = company_in.dict()
 
         # Remove unnecessary fields from the company data
         company_data.pop('konempleo_responsible', None)
         company_data.pop('responsible_user', None)
 
-        # Step 3: Insert the company record
+        # Insert the company record
         company = CompanyModel(**company_data)
         company.active = activeState
 
@@ -80,7 +82,7 @@ def create_company(
         )
         konempleo_user = CompanyUser(
             companyId=company.id,
-            userId=konempleo_userId
+            userId=konempleo_user.id
         )
         db.add(company_user)
         db.add(konempleo_user)
