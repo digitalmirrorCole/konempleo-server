@@ -278,7 +278,7 @@ def get_all_companies(
     ).join(
         Users, Users.id == CompanyUser.userId
     ).filter(
-        Users.role == UserEnum.company_recruit,
+        Users.role == UserEnum.company,
         Users.active == True
     ).subquery()
 

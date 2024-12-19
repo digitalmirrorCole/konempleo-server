@@ -137,7 +137,7 @@ def get_offers_by_company(company_id: int, db: Session = Depends(get_db), userTo
     Get offers for a given company and count the number of associated VitaeOffer records for each offer.
     """
 
-    if userToken.role not in [UserEnum.super_admin, UserEnum.company]:
+    if userToken.role not in [UserEnum.super_admin, UserEnum.admin, UserEnum.company]:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
 
     # Check if the company exists
