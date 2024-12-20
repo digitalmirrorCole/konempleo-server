@@ -5,7 +5,7 @@ from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadF
 from sqlalchemy import func
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_password_hash, get_user_current
-from app.company.companyDTO import Company, CompanyCreate, CompanyUpdate, CompanyWCount
+from app.company.companyDTO import Company, CompanyCreate, CompanyUpdate, CompanyWCount, CompanyWCountWithRecruiter
 from sqlalchemy.orm import Session
 from app.company.companyService import upload_picture_to_s3
 from app import deps
@@ -201,13 +201,14 @@ def update_company(
     return company
 
 
-@companyRouter.get("/company/owned/", status_code=200, response_model=List[CompanyWCount])
+@companyRouter.get("/company/owned/", status_code=200, response_model=List[CompanyWCountWithRecruiter])
 def get_company(
     *, db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
-) -> dict:
+) -> List[CompanyWCountWithRecruiter]:
     """
-    gets company in the database.
+    Gets companies owned by the user in the database along with recruiter info.
     """
+    # Find all companies associated with the user
     company_user_records = db.query(CompanyUser).filter(CompanyUser.userId == userToken.id).all()
     
     if not company_user_records:
@@ -215,28 +216,64 @@ def get_company(
     
     company_ids = [record.companyId for record in company_user_records]
 
-    # Query to get all companies and count of CVitae records for each company
-    companies_with_cv_count = db.query(
+    # Subquery for recruiter information
+    recruiter_subquery = db.query(
+        CompanyUser.companyId.label("company_id"),
+        Users.fullname.label("recruiter_name"),
+        Users.email.label("recruiter_email"),
+        func.row_number().over(
+            partition_by=CompanyUser.companyId, 
+            order_by=Users.id
+        ).label("row_number")
+    ).join(
+        Users, Users.id == CompanyUser.userId
+    ).filter(
+        Users.role == UserEnum.company,
+        Users.active == True
+    ).subquery()
+
+    # Main query to get companies with recruiter information
+    companies_with_recruiter = db.query(
         CompanyModel,
-        func.count(CVitae.Id).label('cv_count')
+        func.count(CVitae.Id).label('cv_count'),
+        recruiter_subquery.c.recruiter_name,
+        recruiter_subquery.c.recruiter_email
     ).outerjoin(
         CVitae, CVitae.companyId == CompanyModel.id
+    ).outerjoin(
+        recruiter_subquery, (recruiter_subquery.c.company_id == CompanyModel.id) & 
+                            (recruiter_subquery.c.row_number == 1)
     ).filter(
         CompanyModel.id.in_(company_ids)
     ).group_by(
-        CompanyModel.id
+        CompanyModel.id,
+        recruiter_subquery.c.recruiter_name,
+        recruiter_subquery.c.recruiter_email
     ).all()
 
-    if not companies_with_cv_count:
+    if not companies_with_recruiter:
         return []
-        # raise HTTPException(status_code=404, detail="No companies found.")
-    
-    # Format the response to include the company data along with the CV count
+
+    # Format the response
     result = []
-    for company, cv_count in companies_with_cv_count:
-        company_dict = company.__dict__.copy()
-        company_dict['cv_count'] = cv_count
-        result.append(company_dict)
+    for company, cv_count, recruiter_name, recruiter_email in companies_with_recruiter:
+        result.append(CompanyWCountWithRecruiter(
+            id=company.id,
+            name=company.name,
+            sector=company.sector,
+            document=company.document,
+            document_type=company.document_type,
+            city=company.city,
+            picture=company.picture,
+            activeoffers=company.activeoffers,
+            availableoffers=company.availableoffers,
+            totaloffers=company.totaloffers,
+            active=company.active,
+            employees=company.employees,
+            cv_count=cv_count,
+            recruiter_name=recruiter_name,
+            recruiter_email=recruiter_email
+        ))
     
     return result
 

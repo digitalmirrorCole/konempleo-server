@@ -66,12 +66,26 @@ class CompanyInDBBaseWCount(CompanyBase):
     class Config:
         orm_mode: True
 
+# Properties shared by models stored in DB
+class CompanyInDBBaseWCountWRecruiter(CompanyBase):
+    id: int
+    cv_count: int
+    recruiter_name: Optional[str] = None
+    recruiter_email: Optional[str] = None
+
+    class Config:
+        orm_mode: True
+
 # Properties to return to client
 class Company(CompanyInDBBase):
     pass
 
 # Properties to return to client
 class CompanyWCount(CompanyInDBBaseWCount):
+    pass
+
+# Properties to return to client
+class CompanyWCountWithRecruiter(CompanyInDBBaseWCountWRecruiter):
     pass
 
 # Properties properties stored in DB
