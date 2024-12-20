@@ -11,7 +11,7 @@ class UserBase(BaseModel):
     email: EmailStr
     role: UserEnum
     active: bool
-    suspended: bool
+    is_deleted: bool
     phone: Optional[str] = None
     companies: List[str] = []
 
@@ -37,6 +37,8 @@ class UserUpdateDTO(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     role: Optional[UserEnum] = None
+    active: Optional[bool] = None
+    is_deleted: Optional[bool] = None
 
 class UserInsert(BaseModel):
     fullname: str
