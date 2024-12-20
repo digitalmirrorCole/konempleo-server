@@ -1,6 +1,7 @@
 from sqlite3 import IntegrityError
 import traceback
 from fastapi import APIRouter, Body, Depends, HTTPException
+from sqlalchemy import func
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_password_hash, get_user_current
 from app.user.userService import userServices
@@ -171,25 +172,51 @@ def update_user(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail="An error occurred while updating the user.")
-
-
+    
 @userRouter.get("/users/", status_code=200, response_model=List[User])
 def get_users(
     *, db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
-) -> dict:
+) -> List[User]:
     """
-    gets users in the database.
+    Gets users in the database along with the names of the companies they are related to.
     """
-    users = []
     if userToken.role not in [UserEnum.super_admin, UserEnum.admin]:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
-    try:
-        users = userServices.get_multi(db=db)
-        return users
     
+    try:
+        # Query users along with related companies
+        users_with_companies = db.query(
+            Users,
+            func.array_agg(Company.name).label("companies")
+        ).outerjoin(
+            CompanyUser, CompanyUser.userId == Users.id
+        ).outerjoin(
+            Company, Company.id == CompanyUser.companyId
+        ).group_by(
+            Users.id
+        ).all()
+        
+        # Format the response
+        result = []
+        for user, companies in users_with_companies:
+            result.append(
+                User(
+                    id=user.id,
+                    fullname=user.fullname,
+                    email=user.email,
+                    role=user.role,
+                    active=user.active,
+                    suspended=user.suspended,
+                    phone=user.phone,
+                    companies=[company for company in companies if company]  # Filter out nulls
+                )
+            )
+        return result
+
     except Exception as e:
-        print(f"Error occurred in create_user function: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error Fetching the clients")
+        print(f"Error occurred in get_users function: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching the users")
+
 
 @userRouter.get("/users/company/{company_id}", status_code=200, response_model=List[User])
 def get_users_by_company(

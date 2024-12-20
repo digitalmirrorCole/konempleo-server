@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import IntEnum
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, EmailStr
 
 from models.models import UserEnum
@@ -11,6 +11,9 @@ class UserBase(BaseModel):
     email: EmailStr
     role: UserEnum
     active: bool
+    suspended: bool
+    phone: Optional[str] = None
+    companies: List[str] = []
 
 class UserAdminCreateDTO(BaseModel):
     fullname: str
