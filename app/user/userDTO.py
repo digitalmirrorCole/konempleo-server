@@ -38,7 +38,7 @@ class UserUpdateDTO(BaseModel):
     phone: Optional[str] = None
     role: Optional[UserEnum] = None
     active: Optional[bool] = None
-    is_deleted: Optional[bool] = None
+    is_deleted: Optional[bool] = False
 
 class UserInsert(BaseModel):
     fullname: str

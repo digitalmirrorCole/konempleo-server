@@ -362,6 +362,7 @@ def get_all_companies(
                 availableoffers=company.availableoffers,
                 totaloffers=company.totaloffers,
                 active=company.active,
+                is_deleted=company.is_deleted,
                 employees=company.employees,
                 cv_count=cv_count,
                 admin_name=admin_name,

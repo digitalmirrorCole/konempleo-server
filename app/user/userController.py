@@ -206,6 +206,7 @@ def get_users(
                     email=user.email,
                     role=user.role,
                     active=user.active,
+                    is_deleted=user.is_deleted,
                     suspended=user.suspended,
                     phone=user.phone,
                     companies=[company for company in companies if company]  # Filter out nulls

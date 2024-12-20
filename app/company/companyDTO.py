@@ -16,7 +16,7 @@ class CompanyBase(BaseModel):
     activeoffers: Optional[int] = 0
     totaloffers: Optional[int] = 0
     active: bool = True
-    is_deleted: bool
+    is_deleted: bool = False
     employees: int
 
 class CompanyCreate(BaseModel):
@@ -43,7 +43,8 @@ class CompanyUpdate(BaseModel,extra = Extra.forbid):
     totaloffers: Optional[int] = None
     konempleo_responsible: Optional[int] = None
     responsible_user: Optional[UserCreateDTO] = None
-    is_deleted: Optional[bool] = None
+    is_deleted: Optional[bool] = False
+    active: Optional[bool] = False
     
 class CompanySoftDelete(BaseModel):
     deleted: bool
