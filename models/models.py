@@ -55,7 +55,7 @@ class Company(Base):
     employees = Column(Integer, server_default=text('0'))
     city = Column(String)
     active = Column(Boolean, default=True)
-    is_deleted = Column(Boolean, nullable=False, server_default='false')
+    # is_deleted = Column(Boolean, nullable=False, server_default='false')
 
     users = relationship("CompanyUser", back_populates="company")
     company_cvs = relationship("CVitae", back_populates="vitae_company")
@@ -183,7 +183,7 @@ class Users(Base):
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at = Column(TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now())
     must_change_password = Column(Boolean, default=True)
-    is_deleted = Column(Boolean, nullable=False, server_default='false')
+    # is_deleted = Column(Boolean, nullable=False, server_default='false')
 
     companies = relationship("CompanyUser", back_populates="user")
 
