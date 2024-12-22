@@ -17,12 +17,10 @@ COPY ./app/.env /konempleo/db/.env
 # Set environment variable from .env file
 ENV $(cat /konempleo/app/.env)
 
-
 EXPOSE 80
 
-# Run Alembic migration
-CMD [ "alembic", "upgrade", "head" ]
-# RUN alembic upgrade head
+COPY docker-start.sh /konempleo/docker-start.sh
+RUN chmod +x /konempleo/docker-start.sh
 
 # Command to run the application
-CMD [ "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80" ]
+CMD [ "/konempleo/docker-start.sh" ]
