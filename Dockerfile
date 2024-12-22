@@ -19,5 +19,8 @@ ENV $(cat /konempleo/app/.env)
 
 EXPOSE 80
 
+COPY docker-start.sh /konempleo/docker-start.sh
+RUN chmod +x /konempleo/docker-start.sh
+
 # Command to run the application
-CMD [ "docker-start.sh" ]
+CMD [ "/konempleo/docker-start.sh" ]
