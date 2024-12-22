@@ -15,6 +15,7 @@ class CompanyBase(BaseModel):
     picture: Optional[str] = None
     activeoffers: Optional[int] = 0
     totaloffers: Optional[int] = 0
+    availableoffers: Optional[int] = 0
     active: bool = True
     is_deleted: bool = False
     employees: int

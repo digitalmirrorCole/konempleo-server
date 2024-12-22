@@ -32,6 +32,9 @@ class UserCreateDTO(BaseModel):
     role: Optional[UserEnum] = 4
     phone: Optional[str] = None
 
+class UserCreateWithCompaniesResponseDTO(UserCreateResponseDTO):
+    associated_companies: List[str]
+
 class UserUpdateDTO(BaseModel):
     fullname: Optional[str] = None
     email: Optional[EmailStr] = None

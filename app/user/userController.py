@@ -5,7 +5,7 @@ from sqlalchemy import func
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_password_hash, get_user_current
 from app.user.userService import userServices
-from app.user.userDTO import User, UserAdminCreateDTO, UserCreateDTO, UserCreateResponseDTO, UserInsert, UserUpdateDTO
+from app.user.userDTO import User, UserAdminCreateDTO, UserCreateDTO, UserCreateWithCompaniesResponseDTO, UserInsert, UserUpdateDTO
 from sqlalchemy.orm import Session
 from app import deps
 from typing import List, Optional
@@ -16,7 +16,7 @@ from models.models import Company, CompanyUser, UserEnum, Users
 userRouter = APIRouter()
 userRouter.tags = ['User']
 
-@userRouter.post("/user/admin/", status_code=201, response_model=UserCreateResponseDTO)
+@userRouter.post("/user/admin/", status_code=201, response_model=UserCreateWithCompaniesResponseDTO)
 def create_user(
     *,
     user_in: UserAdminCreateDTO, 
@@ -47,6 +47,8 @@ def create_user(
             })
         )
 
+        associated_company_names = []  # To store associated company names
+
         # Step 2: Validate company IDs and create CompanyUser records
         if company_ids:
             # Fetch existing companies from the DB
@@ -58,17 +60,28 @@ def create_user(
             if invalid_ids:
                 raise HTTPException(status_code=404, detail=f"Companies with IDs {list(invalid_ids)} not found.")
 
-            # Create CompanyUser records
-            for company_id in existing_company_ids:
-                company_user = CompanyUser(
-                    companyId=company_id,
+            # Create CompanyUser records and collect associated company names
+            company_user_records = [
+                CompanyUser(
+                    companyId=company.id,
                     userId=user.id
                 )
-                db.add(company_user)
+                for company in existing_companies
+            ]
+            db.bulk_save_objects(company_user_records)  # Bulk save for better performance
+            associated_company_names = [company.name for company in existing_companies]
 
         db.commit()  # Commit the transaction after successful processing
+        db.refresh(user)  # Refresh user instance to ensure it's up to date
 
-        return user
+        # Return user details along with associated company names
+        return UserCreateWithCompaniesResponseDTO(
+            id=user.id,
+            fullname=user.fullname,
+            email=user.email,
+            role=user.role,
+            associated_companies=associated_company_names
+        )
 
     except IntegrityError:
         db.rollback()
@@ -244,3 +257,49 @@ def get_users_by_company(
     except Exception as e:
         print(f"Error occurred while fetching users for company ID {company_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching users for the company")
+
+@userRouter.get("/users/me", status_code=200, response_model=User)
+def get_current_user(
+    *, db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
+) -> User:
+    """
+    Gets the current user's information along with the names of the companies they are related to.
+    """
+    try:
+        # Query user along with related companies
+        user_with_companies = db.query(
+            Users,
+            func.array_agg(Company.name).label("companies")
+        ).outerjoin(
+            CompanyUser, CompanyUser.userId == Users.id
+        ).outerjoin(
+            Company, Company.id == CompanyUser.companyId
+        ).filter(
+            Users.id == userToken.id
+        ).group_by(
+            Users.id
+        ).first()
+        
+        # If the user does not exist
+        if not user_with_companies:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Extract user and companies
+        user, companies = user_with_companies
+        
+        # Format the response
+        return User(
+            id=user.id,
+            fullname=user.fullname,
+            email=user.email,
+            role=user.role,
+            active=user.active,
+            is_deleted=user.is_deleted,
+            suspended=user.suspended,
+            phone=user.phone,
+            companies=[company for company in companies if company]  # Filter out nulls
+        )
+
+    except Exception as e:
+        print(f"Error occurred in get_current_user function: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching the user information")
