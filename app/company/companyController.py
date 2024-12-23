@@ -201,13 +201,17 @@ def get_company(
 ) -> List[CompanyWCountWithRecruiter]:
     """
     Gets companies owned by the user in the database along with recruiter info.
+    Only includes companies that are not marked as deleted (is_deleted = False).
     """
     # Find all companies associated with the user
-    company_user_records = db.query(CompanyUser).filter(CompanyUser.userId == userToken.id).all()
-    
+    company_user_records = db.query(CompanyUser).join(Company).filter(
+        CompanyUser.userId == userToken.id,
+        Company.is_deleted == False  # Filter out deleted companies
+    ).all()
+
     if not company_user_records:
         raise HTTPException(status_code=404, detail="No companies found for the given user ID.")
-    
+
     company_ids = [record.companyId for record in company_user_records]
 
     # Subquery for recruiter information
@@ -223,7 +227,8 @@ def get_company(
         Users, Users.id == CompanyUser.userId
     ).filter(
         Users.role == UserEnum.company,
-        Users.active == True
+        Users.active == True,
+        Users.is_deleted == False  # Exclude deleted recruiters
     ).subquery()
 
     # Main query to get companies with recruiter information
@@ -238,7 +243,8 @@ def get_company(
         recruiter_subquery, (recruiter_subquery.c.company_id == CompanyModel.id) & 
                             (recruiter_subquery.c.row_number == 1)
     ).filter(
-        CompanyModel.id.in_(company_ids)
+        CompanyModel.id.in_(company_ids),
+        CompanyModel.is_deleted == False  # Exclude deleted companies
     ).group_by(
         CompanyModel.id,
         recruiter_subquery.c.recruiter_name,
@@ -279,6 +285,7 @@ def get_all_companies(
     """
     Gets all companies in the database if the user is a super admin.
     Includes the first active user with role type 2 (admin) and role type 3 (company_recruit).
+    Only includes companies that are not marked as deleted (is_deleted = False).
     """
     if userToken.role != UserEnum.super_admin:
         raise HTTPException(status_code=403, detail="You do not have permission to view all companies.")
@@ -296,7 +303,8 @@ def get_all_companies(
         Users, Users.id == CompanyUser.userId
     ).filter(
         Users.role == UserEnum.admin,
-        Users.active == True
+        Users.active == True,
+        Users.is_deleted == False  # Exclude deleted admin users
     ).subquery()
 
     # Subquery for first recruiter user
@@ -312,7 +320,8 @@ def get_all_companies(
         Users, Users.id == CompanyUser.userId
     ).filter(
         Users.role == UserEnum.company,
-        Users.active == True
+        Users.active == True,
+        Users.is_deleted == False  # Exclude deleted recruiter users
     ).subquery()
 
     # Main query
@@ -331,6 +340,8 @@ def get_all_companies(
     ).outerjoin(
         recruiter_subquery, (recruiter_subquery.c.company_id == CompanyModel.id) & 
                             (recruiter_subquery.c.row_number == 1)
+    ).filter(
+        CompanyModel.is_deleted == False  # Exclude deleted companies
     ).group_by(
         CompanyModel.id,
         admin_subquery.c.admin_name, admin_subquery.c.admin_email,

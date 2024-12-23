@@ -190,13 +190,14 @@ def get_users(
     *, db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
 ) -> List[User]:
     """
-    Gets users in the database along with the names of the companies they are related to.
+    Gets users in the database along with the names of the companies they are related to,
+    filtering out users and companies with is_deleted set to true.
     """
     if userToken.role not in [UserEnum.super_admin, UserEnum.admin]:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
     
     try:
-        # Query users along with related companies
+        # Query users along with related companies, filtering out is_deleted = true
         users_with_companies = db.query(
             Users,
             func.array_agg(Company.name).label("companies")
@@ -204,6 +205,9 @@ def get_users(
             CompanyUser, CompanyUser.userId == Users.id
         ).outerjoin(
             Company, Company.id == CompanyUser.companyId
+        ).filter(
+            Users.is_deleted == False,  # Exclude users with is_deleted = true
+            Company.is_deleted == False  # Exclude companies with is_deleted = true
         ).group_by(
             Users.id
         ).all()
@@ -236,17 +240,21 @@ def get_users_by_company(
     company_id: int, 
     db: Session = Depends(deps.get_db), 
     userToken: UserToken = Depends(get_user_current)
-) -> dict:
+) -> List[User]:
     """
-    Get all users associated with a given company.
+    Get all users associated with a given company, excluding deleted users and companies.
     """
     # Check if the requesting user has the required permissions
     if userToken.role not in [UserEnum.super_admin, UserEnum.company]:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
 
     try:
-        # Query to get all users related to the given company
-        users = db.query(Users).join(CompanyUser).filter(CompanyUser.companyId == company_id).all()
+        # Query to get all users related to the given company, filtering for non-deleted records
+        users = db.query(Users).join(CompanyUser).join(Company).filter(
+            CompanyUser.companyId == company_id,
+            Users.is_deleted == False,  # Exclude deleted users
+            Company.is_deleted == False  # Exclude deleted companies
+        ).all()
 
         if not users:
             raise HTTPException(status_code=404, detail=f"No users found for company ID: {company_id}")
@@ -256,6 +264,7 @@ def get_users_by_company(
     except Exception as e:
         print(f"Error occurred while fetching users for company ID {company_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching users for the company")
+
 
 @userRouter.get("/users/me", status_code=200, response_model=User)
 def get_current_user(
