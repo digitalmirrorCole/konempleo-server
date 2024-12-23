@@ -16,15 +16,9 @@ from sqlalchemy.orm import aliased
 companyRouter = APIRouter()
 companyRouter.tags = ['Company']
 fields_to_update = [
-    'name', 
-    'sector', 
-    'document', 
-    'document_type', 
-    'city', 
-    'employees', 
-    'activeoffers', 
-    'totaloffers'
-]
+        "name", "sector", "document", "document_type", "city",
+        "employees", "activeoffers", "availableoffers", "totaloffers",
+        "is_deleted", "active"]
 
 @companyRouter.post("/company/", status_code=201, response_model=Company)
 def create_company(

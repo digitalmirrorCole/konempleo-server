@@ -44,8 +44,8 @@ class CompanyUpdate(BaseModel,extra = Extra.forbid):
     totaloffers: Optional[int] = None
     konempleo_responsible: Optional[int] = None
     responsible_user: Optional[UserCreateDTO] = None
-    is_deleted: Optional[bool] = False
-    active: Optional[bool] = False
+    is_deleted: Optional[bool] = None
+    active: Optional[bool] = None
     
 class CompanySoftDelete(BaseModel):
     deleted: bool

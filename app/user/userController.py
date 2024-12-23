@@ -60,16 +60,14 @@ def create_user(
             if invalid_ids:
                 raise HTTPException(status_code=404, detail=f"Companies with IDs {list(invalid_ids)} not found.")
 
-            # Create CompanyUser records and collect associated company names
-            company_user_records = [
-                CompanyUser(
+            # Create and save CompanyUser records explicitly
+            for company in existing_companies:
+                company_user = CompanyUser(
                     companyId=company.id,
                     userId=user.id
                 )
-                for company in existing_companies
-            ]
-            db.bulk_save_objects(company_user_records)  # Bulk save for better performance
-            associated_company_names = [company.name for company in existing_companies]
+                db.add(company_user)
+                associated_company_names.append(company.name)
 
         db.commit()  # Commit the transaction after successful processing
         db.refresh(user)  # Refresh user instance to ensure it's up to date
@@ -92,6 +90,7 @@ def create_user(
         print(f"Error occurred in create_user function: {str(e)}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="An error occurred while creating the user.")
+
     
 @userRouter.post("/user/", status_code=201, response_model=None)
 def create_user(
@@ -168,7 +167,7 @@ def update_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     # Dynamically update fields if they are provided
-    fields_to_update = ['fullname', 'email', 'phone', 'role']
+    fields_to_update = ['fullname', 'email', 'phone', 'role', 'active', 'is_deleted']
     for field in fields_to_update:
         value = getattr(user_in, field, None)
         if value is not None:
