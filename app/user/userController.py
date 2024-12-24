@@ -147,43 +147,99 @@ def create_user(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="An error occurred while creating the user.")
 
-@userRouter.put("/user/{user_id}", response_model=None)
+@userRouter.put("/user/admin/{user_id}", status_code=200, response_model=UserCreateWithCompaniesResponseDTO)
 def update_user(
+    *,
     user_id: int,
-    user_in: UserUpdateDTO = Body(...),
+    user_in: UserAdminCreateDTO,
+    company_ids: Optional[List[int]] = None,  # Optional list of company IDs
     db: Session = Depends(deps.get_db),
     userToken: UserToken = Depends(get_user_current)
 ) -> dict:
     """
-    Update an existing user in the database.
+    Update an existing admin user in the database and optionally update associated companies.
     """
-    # Ensure only authorized users can update (e.g., super_admin or user themselves)
-    if userToken.role != UserEnum.super_admin and userToken.id != user_id:
+    # Authorization check
+    if userToken.role != UserEnum.super_admin:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
-
-    # Fetch the user by ID
+    
+    # Fetch the user
     user = db.query(Users).filter(Users.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Dynamically update fields if they are provided
-    fields_to_update = ['fullname', 'email', 'phone', 'role', 'active', 'is_deleted']
-    for field in fields_to_update:
-        value = getattr(user_in, field, None)
-        if value is not None:
-            setattr(user, field, value)
-
-    # Commit the changes
+    # Role validation
+    if user_in.role not in [UserEnum.super_admin, UserEnum.admin]:
+        raise HTTPException(status_code=400, detail="The user role must be either super_admin or admin.")
+    
     try:
-        db.commit()
-        db.refresh(user)
-        return {"msg": "User updated successfully"}
-    except IntegrityError as e:
-        db.rollback()
-        raise HTTPException(status_code=400, detail="Error occurred while updating the user.")
+        # Step 1: Update user information
+        user.fullname = user_in.fullname
+        user.email = user_in.email
+        user.phone = user_in.phone
+        user.role = user_in.role
+        db.add(user)
+
+        associated_company_names = []  # To store associated company names
+
+        # Step 2: Validate company IDs and update CompanyUser records
+        if company_ids:
+            # Fetch existing companies from the DB
+            existing_companies = db.query(Company).filter(Company.id.in_(company_ids)).all()
+            existing_company_ids = {company.id for company in existing_companies}
+
+            # Check for invalid company IDs
+            invalid_ids = set(company_ids) - existing_company_ids
+            if invalid_ids:
+                raise HTTPException(status_code=404, detail=f"Companies with IDs {list(invalid_ids)} not found.")
+
+            # Get current CompanyUser records for the user
+            current_company_users = db.query(CompanyUser).filter(CompanyUser.userId == user_id).all()
+            current_company_ids = {cu.companyId for cu in current_company_users}
+
+            # Identify records to remove and add
+            to_remove = current_company_ids - existing_company_ids
+            to_add = existing_company_ids - current_company_ids
+
+            # Remove CompanyUser records
+            if to_remove:
+                db.query(CompanyUser).filter(
+                    CompanyUser.userId == user_id,
+                    CompanyUser.companyId.in_(to_remove)
+                ).delete(synchronize_session=False)
+
+            # Add new CompanyUser records
+            for company_id in to_add:
+                company_user = CompanyUser(
+                    companyId=company_id,
+                    userId=user_id
+                )
+                db.add(company_user)
+                associated_company_names.append(
+                    db.query(Company.name).filter(Company.id == company_id).scalar()
+                )
+        else:
+            # If no company_ids provided, remove all associated CompanyUser records
+            db.query(CompanyUser).filter(CompanyUser.userId == user_id).delete(synchronize_session=False)
+
+        db.commit()  # Commit the transaction after successful processing
+        db.refresh(user)  # Refresh user instance to ensure it's up to date
+
+        # Return user details along with associated company names
+        return UserCreateWithCompaniesResponseDTO(
+            id=user.id,
+            fullname=user.fullname,
+            email=user.email,
+            role=user.role,
+            associated_companies=associated_company_names
+        )
+
     except Exception as e:
         db.rollback()
+        print(f"Error occurred in update_user function: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail="An error occurred while updating the user.")
+
     
 @userRouter.get("/users/", status_code=200, response_model=List[User])
 def get_users(
@@ -271,13 +327,15 @@ def get_current_user(
     *, db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
 ) -> User:
     """
-    Gets the current user's information along with the names of the companies they are related to.
+    Gets the current user's information along with the IDs and names of the companies they are related to.
     """
     try:
         # Query user along with related companies
         user_with_companies = db.query(
             Users,
-            func.array_agg(Company.name).label("companies")
+            func.array_agg(
+                func.json_build_object("id", Company.id, "name", Company.name)
+            ).label("companies")
         ).outerjoin(
             CompanyUser, CompanyUser.userId == Users.id
         ).outerjoin(
