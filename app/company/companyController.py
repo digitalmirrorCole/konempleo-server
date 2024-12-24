@@ -164,9 +164,15 @@ def update_company(
             db.flush()  # Get the new user ID
             responsible_user = new_user
 
-        # Add a new CompanyUser record for the new responsible user
-        new_company_user = CompanyUser(companyId=company_id, userId=responsible_user.id)
-        db.add(new_company_user)
+        # Check if a CompanyUser record already exists
+        existing_company_user = db.query(CompanyUser).filter(
+            CompanyUser.companyId == company_id,
+            CompanyUser.userId == responsible_user.id
+        ).first()
+        if not existing_company_user:
+            # Add a new CompanyUser record for the new responsible user
+            new_company_user = CompanyUser(companyId=company_id, userId=responsible_user.id)
+            db.add(new_company_user)
 
     # Handle konempleo_responsible update (role = admin)
     if company_in.konempleo_responsible:
@@ -184,9 +190,15 @@ def update_company(
         if current_konempleo_record and current_konempleo_record.userId != company_in.konempleo_responsible:
             db.delete(current_konempleo_record)
 
-        # Add a new CompanyUser record for the new konempleo_responsible
-        new_konempleo_user = CompanyUser(companyId=company_id, userId=admin_user.id)
-        db.add(new_konempleo_user)
+        # Check if a CompanyUser record already exists
+        existing_konempleo_user = db.query(CompanyUser).filter(
+            CompanyUser.companyId == company_id,
+            CompanyUser.userId == admin_user.id
+        ).first()
+        if not existing_konempleo_user:
+            # Add a new CompanyUser record for the new konempleo_responsible
+            new_konempleo_user = CompanyUser(companyId=company_id, userId=admin_user.id)
+            db.add(new_konempleo_user)
 
     # Commit the changes
     db.commit()
