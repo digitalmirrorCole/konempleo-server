@@ -151,7 +151,7 @@ def create_user(
 def update_user(
     *,
     user_id: int,
-    user_in: UserAdminCreateDTO,
+    user_in: UserUpdateDTO,
     company_ids: Optional[List[int]] = None,  # Optional list of company IDs
     db: Session = Depends(deps.get_db),
     userToken: UserToken = Depends(get_user_current)
@@ -177,7 +177,9 @@ def update_user(
         user.fullname = user_in.fullname
         user.email = user_in.email
         user.phone = user_in.phone
-        user.role = user_in.role
+        user.role = user.role
+        user.active = user_in.active
+        user.is_deleted = user_in.is_deleted
         db.add(user)
 
         associated_company_names = []  # To store associated company names

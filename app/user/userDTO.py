@@ -39,7 +39,6 @@ class UserUpdateDTO(BaseModel):
     fullname: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
-    role: Optional[UserEnum] = None
     active: Optional[bool] = None
     is_deleted: Optional[bool] = False
 
