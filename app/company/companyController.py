@@ -281,6 +281,7 @@ def get_company(
             availableoffers=company.availableoffers,
             totaloffers=company.totaloffers,
             active=company.active,
+            is_deleted=company.is_deleted,
             employees=company.employees,
             cv_count=cv_count,
             recruiter_name=recruiter_name,
