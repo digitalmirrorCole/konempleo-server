@@ -216,9 +216,9 @@ def get_company(
     Only includes companies that are not marked as deleted (is_deleted = False).
     """
     # Find all companies associated with the user
-    company_user_records = db.query(CompanyUser).join(Company).filter(
+    company_user_records = db.query(CompanyUser).join(CompanyModel).filter(
         CompanyUser.userId == userToken.id,
-        Company.is_deleted == False  # Filter out deleted companies
+        CompanyModel.is_deleted == False  # Filter out deleted companies
     ).all()
 
     if not company_user_records:

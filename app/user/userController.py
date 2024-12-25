@@ -5,7 +5,7 @@ from sqlalchemy import func
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_password_hash, get_user_current
 from app.user.userService import userServices
-from app.user.userDTO import User, UserAdminCreateDTO, UserCreateDTO, UserCreateWithCompaniesResponseDTO, UserInsert, UserUpdateDTO
+from app.user.userDTO import User, UserAdminCreateDTO, UserCreateDTO, UserCreateWithCompaniesResponseDTO, UserInsert, UserUpdateDTO, UserWCompanies
 from sqlalchemy.orm import Session
 from app import deps
 from typing import List, Optional
@@ -167,10 +167,6 @@ def update_user(
     user = db.query(Users).filter(Users.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-
-    # Role validation
-    if user_in.role not in [UserEnum.super_admin, UserEnum.admin]:
-        raise HTTPException(status_code=400, detail="The user role must be either super_admin or admin.")
     
     try:
         # Step 1: Update user information
@@ -324,7 +320,7 @@ def get_users_by_company(
         raise HTTPException(status_code=500, detail="Error fetching users for the company")
 
 
-@userRouter.get("/users/me", status_code=200, response_model=User)
+@userRouter.get("/users/me", status_code=200, response_model=UserWCompanies)
 def get_current_user(
     *, db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
 ) -> User:
@@ -335,16 +331,19 @@ def get_current_user(
         # Query user along with related companies
         user_with_companies = db.query(
             Users,
+            func.coalesce(
             func.array_agg(
-                func.json_build_object("id", Company.id, "name", Company.name)
-            ).label("companies")
-        ).outerjoin(
+            func.json_build_object("id", Company.id, "name", Company.name)
+            ).filter(Company.id.isnot(None)),  # Filter out null entries
+            []
+            ).label("companies")  # Default to an empty list
+            ).outerjoin(
             CompanyUser, CompanyUser.userId == Users.id
-        ).outerjoin(
+            ).outerjoin(
             Company, Company.id == CompanyUser.companyId
-        ).filter(
+            ).filter(
             Users.id == userToken.id
-        ).group_by(
+            ).group_by(
             Users.id
         ).first()
         
@@ -356,7 +355,7 @@ def get_current_user(
         user, companies = user_with_companies
         
         # Format the response
-        return User(
+        return UserWCompanies(
             id=user.id,
             fullname=user.fullname,
             email=user.email,

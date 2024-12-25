@@ -5,6 +5,9 @@ from pydantic import BaseModel, EmailStr
 
 from models.models import UserEnum
 
+class CompanyUserDTO(BaseModel):
+    id: Optional[int]
+    name: Optional[str]
 
 class UserBase(BaseModel):
     fullname: str
@@ -13,7 +16,6 @@ class UserBase(BaseModel):
     active: bool
     is_deleted: bool
     phone: Optional[str] = None
-    companies: List[str] = []
 
 class UserAdminCreateDTO(BaseModel):
     fullname: str
@@ -31,6 +33,9 @@ class UserCreateDTO(BaseModel):
     email: EmailStr
     role: Optional[UserEnum] = 4
     phone: Optional[str] = None
+
+class UserWCompanies(UserBase):
+    companies: List[CompanyUserDTO] = []
 
 class UserCreateWithCompaniesResponseDTO(UserCreateResponseDTO):
     associated_companies: List[str]
