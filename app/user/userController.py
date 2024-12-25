@@ -5,7 +5,7 @@ from sqlalchemy import func
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_password_hash, get_user_current
 from app.user.userService import userServices
-from app.user.userDTO import User, UserAdminCreateDTO, UserCreateDTO, UserCreateWithCompaniesResponseDTO, UserInsert, UserUpdateDTO, UserWCompanies
+from app.user.userDTO import CompanyUserDTO, User, UserAdminCreateDTO, UserCreateDTO, UserCreateWithCompaniesResponseDTO, UserInsert, UserUpdateDTO, UserWCompanies
 from sqlalchemy.orm import Session
 from app import deps
 from typing import List, Optional
@@ -147,7 +147,7 @@ def create_user(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="An error occurred while creating the user.")
 
-@userRouter.put("/user/admin/{user_id}", status_code=200, response_model=UserCreateWithCompaniesResponseDTO)
+@userRouter.put("/user/admin/{user_id}", status_code=200, response_model=UserWCompanies)
 def update_user(
     *,
     user_id: int,
@@ -155,35 +155,36 @@ def update_user(
     company_ids: Optional[List[int]] = None,  # Optional list of company IDs
     db: Session = Depends(deps.get_db),
     userToken: UserToken = Depends(get_user_current)
-) -> dict:
+) -> UserWCompanies:
     """
     Update an existing admin user in the database and optionally update associated companies.
+    Prevent duplicate CompanyUser records for the same companyId and userId.
     """
     # Authorization check
     if userToken.role != UserEnum.super_admin:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
-    
+
     # Fetch the user
     user = db.query(Users).filter(Users.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     try:
         # Step 1: Update user information
         user.fullname = user_in.fullname
         user.email = user_in.email
         user.phone = user_in.phone
-        user.role = user.role
         user.active = user_in.active
         user.is_deleted = user_in.is_deleted
         db.add(user)
 
-        associated_company_names = []  # To store associated company names
+        # Prepare to collect associated companies
+        associated_companies = []
 
         # Step 2: Validate company IDs and update CompanyUser records
         if company_ids:
             # Fetch existing companies from the DB
-            existing_companies = db.query(Company).filter(Company.id.in_(company_ids)).all()
+            existing_companies = db.query(Company).filter(Company.id.in_(company_ids), Company.is_deleted == False).all()
             existing_company_ids = {company.id for company in existing_companies}
 
             # Check for invalid company IDs
@@ -208,14 +209,24 @@ def update_user(
 
             # Add new CompanyUser records
             for company_id in to_add:
-                company_user = CompanyUser(
-                    companyId=company_id,
-                    userId=user_id
-                )
-                db.add(company_user)
-                associated_company_names.append(
-                    db.query(Company.name).filter(Company.id == company_id).scalar()
-                )
+                # Check if the record already exists (extra layer of validation)
+                existing_record = db.query(CompanyUser).filter(
+                    CompanyUser.companyId == company_id,
+                    CompanyUser.userId == user_id
+                ).first()
+
+                if not existing_record:
+                    company_user = CompanyUser(
+                        companyId=company_id,
+                        userId=user_id
+                    )
+                    db.add(company_user)
+                    # Add to associated_companies with both ID and name
+                    company_name = db.query(Company.name).filter(Company.id == company_id).scalar()
+                    if company_name:
+                        associated_companies.append(CompanyUserDTO(id=company_id, name=company_name))
+                else:
+                    print(f"Duplicate record avoided for companyId: {company_id}, userId: {user_id}")
         else:
             # If no company_ids provided, remove all associated CompanyUser records
             db.query(CompanyUser).filter(CompanyUser.userId == user_id).delete(synchronize_session=False)
@@ -223,20 +234,23 @@ def update_user(
         db.commit()  # Commit the transaction after successful processing
         db.refresh(user)  # Refresh user instance to ensure it's up to date
 
-        # Return user details along with associated company names
-        return UserCreateWithCompaniesResponseDTO(
+        # Return user details along with associated companies
+        return UserWCompanies(
             id=user.id,
             fullname=user.fullname,
             email=user.email,
             role=user.role,
-            associated_companies=associated_company_names
+            active=user.active,
+            is_deleted=user.is_deleted,
+            phone=user.phone,
+            companies=associated_companies
         )
 
     except Exception as e:
         db.rollback()
         print(f"Error occurred in update_user function: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail="An error occurred while updating the user.")
+        raise HTTPException(status_code=500, detail="An error occurred while updating the user")
 
     
 @userRouter.get("/users/", status_code=200, response_model=List[User])
