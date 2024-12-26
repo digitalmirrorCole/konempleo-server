@@ -273,19 +273,21 @@ def get_users(
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
     
     try:
-        # Query users along with related companies, filtering out is_deleted = true
+        # Query users along with related companies, including users with no associated companies
         users_with_companies = db.query(
             Users,
-            func.array_agg(
-                func.json_build_object("id", Company.id, "name", Company.name)
+            func.coalesce(
+                func.array_agg(
+                    func.json_build_object("id", Company.id, "name", Company.name)
+                ).filter(Company.is_deleted == False),  # Exclude deleted companies
+                []
             ).label("companies")
         ).outerjoin(
             CompanyUser, CompanyUser.userId == Users.id
         ).outerjoin(
             Company, Company.id == CompanyUser.companyId
         ).filter(
-            Users.is_deleted == False,  # Exclude users with is_deleted = true
-            Company.is_deleted == False  # Exclude companies with is_deleted = true
+            Users.is_deleted == False  # Exclude users with is_deleted = true
         ).group_by(
             Users.id
         ).all()
@@ -397,4 +399,63 @@ def get_current_user(
 
     except Exception as e:
         print(f"Error occurred in get_current_user function: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching the user information")
+
+@userRouter.get("/users/{userId}", status_code=200, response_model=UserWCompanies)
+def get_user_by_id(
+    *,
+    userId: int,
+    db: Session = Depends(deps.get_db),
+    userToken: UserToken = Depends(get_user_current)
+) -> UserWCompanies:
+    """
+    Gets a user's information along with the IDs and names of the companies they are related to by user ID.
+    """
+    try:
+        # Check permissions: Only allow access if the user is a super_admin or admin
+        if userToken.role not in [UserEnum.super_admin, UserEnum.admin, UserEnum.company]:
+            raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
+
+        # Query user along with related companies
+        user_with_companies = db.query(
+            Users,
+            func.coalesce(
+                func.array_agg(
+                    func.json_build_object("id", Company.id, "name", Company.name)
+                ).filter(Company.id.isnot(None)),  # Filter out null entries
+                []
+            ).label("companies")  # Default to an empty list
+        ).outerjoin(
+            CompanyUser, CompanyUser.userId == Users.id
+        ).outerjoin(
+            Company, Company.id == CompanyUser.companyId
+        ).filter(
+            Users.id == userId,  # Filter by the provided user ID
+            Users.is_deleted == False  # Exclude deleted users
+        ).group_by(
+            Users.id
+        ).first()
+
+        # If the user does not exist
+        if not user_with_companies:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Extract user and companies
+        user, companies = user_with_companies
+
+        # Format the response
+        return UserWCompanies(
+            id=user.id,
+            fullname=user.fullname,
+            email=user.email,
+            role=user.role,
+            active=user.active,
+            is_deleted=user.is_deleted,
+            suspended=user.suspended,
+            phone=user.phone,
+            companies=[CompanyUserDTO(**company) for company in companies if company]  # Filter out nulls
+        )
+
+    except Exception as e:
+        print(f"Error occurred in get_user_by_id function: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching the user information")
