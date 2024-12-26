@@ -7,7 +7,7 @@ from app.auth.authDTO import UserToken
 from app.auth.authService import get_user_current
 from app.deps import get_db
 from app.offer.offerDTO import Offer, OfferCreateDTO, OfferUpdateDTO, OfferWithVitaeCount
-from models.models import Cargo, Company, CompanyOffer, OfferSkill, Skill, UserEnum, Users, VitaeOffer
+from models.models import Cargo, Company, CompanyOffer, CompanyUser, OfferSkill, Skill, UserEnum, Users, VitaeOffer
 from models.models import Offer as OfferModel
 
 offerRouter = APIRouter()
@@ -41,8 +41,8 @@ def create_offer(
         raise HTTPException(status_code=400, detail=f"Invalid cargo ID: {offer_in.companyId}")
 
     # Check if the current active offers will exceed the total offers
-    if company.activeoffers + 1 > company.availableoffers:
-        raise HTTPException(status_code=400, detail="Cannot create new offer. Active offers exceed the available allowed offers for this company.") 
+    if company.availableoffers -1 < 0:
+        raise HTTPException(status_code=400, detail="Cannot create new offer. There arent any available offers for this company.") 
 
     # Prepare offer data
     offer_data = offer_in.dict()
@@ -99,7 +99,8 @@ def update_offer(
     userToken: UserToken = Depends(get_user_current)
 ):
     """
-    Update specific fields in an offer: assigned_cvs, whatsapp_message, and disabled status.
+    Update specific fields in an offer: assigned_cvs, active status (only from True to False),
+    and update the company's activeoffers field through the relationships.
     """
 
     # Ensure that the current user is a company user
@@ -112,23 +113,52 @@ def update_offer(
         raise HTTPException(status_code=404, detail="Offer not found")
 
     try:
+        # Track if the active status changes
+        active_status_changed = False
+
         # Update the allowed fields if they are provided
         if offer_update.assigned_cvs is not None:
             offer.assigned_cvs = offer_update.assigned_cvs
-        if offer_update.whatsapp_message is not None:
-            offer.whatsapp_message = offer_update.whatsapp_message
-        if offer_update.disabled is not None:
-            offer.disabled = offer_update.disabled
 
-        # Commit the updates to the database
+        if offer_update.active is not None:
+            # Allow only transition from active=True to active=False
+            if offer.active and not offer_update.active:
+                active_status_changed = True
+                offer.active = False
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="The 'active' field can only be updated from True to False."
+                )
+
+        # Commit the updates to the offer
         db.commit()
-        db.refresh(offer)
 
+        # Update the company's activeoffers if the active status changed
+        if active_status_changed:
+            # Fetch the related company through the offer_owner -> CompanyUser -> Company
+            company = (
+                db.query(Company)
+                .join(CompanyUser, CompanyUser.companyId == Company.id)
+                .filter(
+                    CompanyUser.userId == offer.offer_owner,  # Match the offer owner
+                    Company.is_deleted == False               # Exclude deleted companies
+                )
+                .first()
+            )
+
+            if company:
+                company.activeoffers = max(0, company.activeoffers - 1)
+                db.commit()
+
+        # Refresh and return the updated offer
+        db.refresh(offer)
         return offer
 
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"An error occurred while updating the offer: {str(e)}")
+
 
 
 @offerRouter.get("/offers/company/details/{company_id}", response_model=List[OfferWithVitaeCount])

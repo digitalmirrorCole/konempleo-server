@@ -40,8 +40,7 @@ class OfferWithVitaeCount(OfferBase):
 # DTO for updating an Offer
 class OfferUpdateDTO(BaseModel):
     assigned_cvs: Optional[int] = None
-    whatsapp_message: Optional[str] = None
-    disabled: Optional[bool] = None
+    active: Optional[bool] = None
 
 class OfferSoftDelete(BaseModel):
     active: bool
