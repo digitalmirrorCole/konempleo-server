@@ -183,49 +183,49 @@ def update_user(
             user.is_deleted = user_in.is_deleted
         db.add(user)
 
-        # Step 2: Validate company IDs and update CompanyUser records
-        if company_ids:
-            # Fetch existing companies from the DB
-            existing_companies = db.query(Company).filter(Company.id.in_(company_ids), Company.is_deleted == False).all()
-            existing_company_ids = {company.id for company in existing_companies}
+        # Step 2: Handle company_ids update only for super_admin users
+        if userToken.role == UserEnum.super_admin:
+            if company_ids:
+                # Fetch existing companies from the DB
+                existing_companies = db.query(Company).filter(Company.id.in_(company_ids), Company.is_deleted == False).all()
+                existing_company_ids = {company.id for company in existing_companies}
 
-            # Check for invalid company IDs
-            invalid_ids = set(company_ids) - existing_company_ids
-            if invalid_ids:
-                raise HTTPException(status_code=404, detail=f"Companies with IDs {list(invalid_ids)} not found.")
+                # Check for invalid company IDs
+                invalid_ids = set(company_ids) - existing_company_ids
+                if invalid_ids:
+                    raise HTTPException(status_code=404, detail=f"Companies with IDs {list(invalid_ids)} not found.")
 
-            # Get current CompanyUser records for the user
-            current_company_users = db.query(CompanyUser).filter(CompanyUser.userId == user_id).all()
-            current_company_ids = {cu.companyId for cu in current_company_users}
+                # Get current CompanyUser records for the user
+                current_company_users = db.query(CompanyUser).filter(CompanyUser.userId == user_id).all()
+                current_company_ids = {cu.companyId for cu in current_company_users}
 
-            # Identify records to remove and add
-            to_remove = current_company_ids - existing_company_ids
-            to_add = existing_company_ids - current_company_ids
+                # Identify records to remove and add
+                to_remove = current_company_ids - existing_company_ids
+                to_add = existing_company_ids - current_company_ids
 
-            # Remove CompanyUser records
-            if to_remove:
-                db.query(CompanyUser).filter(
-                    CompanyUser.userId == user_id,
-                    CompanyUser.companyId.in_(to_remove)
-                ).delete(synchronize_session=False)
+                # Remove CompanyUser records
+                if to_remove:
+                    db.query(CompanyUser).filter(
+                        CompanyUser.userId == user_id,
+                        CompanyUser.companyId.in_(to_remove)
+                    ).delete(synchronize_session=False)
 
-            # Add new CompanyUser records
-            for company_id in to_add:
-                existing_record = db.query(CompanyUser).filter(
-                    CompanyUser.companyId == company_id,
-                    CompanyUser.userId == user_id
-                ).first()
+                # Add new CompanyUser records
+                for company_id in to_add:
+                    existing_record = db.query(CompanyUser).filter(
+                        CompanyUser.companyId == company_id,
+                        CompanyUser.userId == user_id
+                    ).first()
 
-                if not existing_record:
-                    company_user = CompanyUser(
-                        companyId=company_id,
-                        userId=user_id
-                    )
-                    db.add(company_user)
-
-        else:
-            # If no company_ids provided, remove all associated CompanyUser records
-            db.query(CompanyUser).filter(CompanyUser.userId == user_id).delete(synchronize_session=False)
+                    if not existing_record:
+                        company_user = CompanyUser(
+                            companyId=company_id,
+                            userId=user_id
+                        )
+                        db.add(company_user)
+            else:
+                # If no company_ids provided, remove all associated CompanyUser records
+                db.query(CompanyUser).filter(CompanyUser.userId == user_id).delete(synchronize_session=False)
 
         db.commit()  # Commit the transaction after successful processing
 
