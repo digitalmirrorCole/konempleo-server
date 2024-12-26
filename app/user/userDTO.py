@@ -35,6 +35,7 @@ class UserCreateDTO(BaseModel):
     phone: Optional[str] = None
 
 class UserWCompanies(UserBase):
+    id: int
     companies: List[CompanyUserDTO] = []
 
 class UserCreateWithCompaniesResponseDTO(UserCreateResponseDTO):
