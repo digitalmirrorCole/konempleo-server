@@ -41,8 +41,8 @@ def create_offer(
         raise HTTPException(status_code=400, detail=f"Invalid cargo ID: {offer_in.companyId}")
 
     # Check if the current active offers will exceed the total offers
-    if company.totaloffers + 1 > company.availableoffers:
-        raise HTTPException(status_code=400, detail="Cannot create new offer. Active offers exceed the total allowed offers for this company.") 
+    if company.activeoffers + 1 > company.availableoffers:
+        raise HTTPException(status_code=400, detail="Cannot create new offer. Active offers exceed the available allowed offers for this company.") 
 
     # Prepare offer data
     offer_data = offer_in.dict()
