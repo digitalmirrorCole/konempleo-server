@@ -21,10 +21,6 @@ def create_skills(
     Create new skills and associate them with a cargo.
     """
 
-    # Ensure that only super_admin or admin can create skills
-    if userToken.role not in [UserEnum.super_admin]:
-        raise HTTPException(status_code=403, detail="No tienes permisos para ejecutar este servicio")
-
     # Ensure that the cargo exists
     cargo = db.query(Cargo).filter(Cargo.id == skill_in.cargoId).first()
     if not cargo:

@@ -253,10 +253,10 @@ def update_user(
         raise HTTPException(status_code=500, detail="An error occurred while updating the user")
 
     
-@userRouter.get("/users/", status_code=200, response_model=List[User])
+@userRouter.get("/users/", status_code=200, response_model=List[UserWCompanies])
 def get_users(
     *, db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
-) -> List[User]:
+) -> List[UserWCompanies]:
     """
     Gets users in the database along with the names of the companies they are related to,
     filtering out users and companies with is_deleted set to true.
@@ -284,7 +284,7 @@ def get_users(
         result = []
         for user, companies in users_with_companies:
             result.append(
-                User(
+                UserWCompanies(
                     id=user.id,
                     fullname=user.fullname,
                     email=user.email,
