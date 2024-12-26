@@ -170,12 +170,17 @@ def update_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     try:
-        # Step 1: Update user information
-        user.fullname = user_in.fullname
-        user.email = user_in.email
-        user.phone = user_in.phone
-        user.active = user_in.active
-        user.is_deleted = user_in.is_deleted
+        # Step 1: Update user information only if the field is provided
+        if user_in.fullname is not None:
+            user.fullname = user_in.fullname
+        if user_in.email is not None:
+            user.email = user_in.email
+        if user_in.phone is not None:
+            user.phone = user_in.phone
+        if user_in.active is not None:
+            user.active = user_in.active
+        if user_in.is_deleted is not None:
+            user.is_deleted = user_in.is_deleted
         db.add(user)
 
         # Step 2: Validate company IDs and update CompanyUser records
