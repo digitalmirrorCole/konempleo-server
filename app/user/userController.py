@@ -161,7 +161,7 @@ def update_user(
     Prevent duplicate CompanyUser records for the same companyId and userId.
     """
     # Authorization check
-    if userToken.role != UserEnum.super_admin:
+    if userToken.role not in [UserEnum.super_admin, UserEnum.company]:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
 
     # Fetch the user
@@ -177,9 +177,6 @@ def update_user(
         user.active = user_in.active
         user.is_deleted = user_in.is_deleted
         db.add(user)
-
-        # Prepare to collect associated companies
-        associated_companies = []
 
         # Step 2: Validate company IDs and update CompanyUser records
         if company_ids:
@@ -209,7 +206,6 @@ def update_user(
 
             # Add new CompanyUser records
             for company_id in to_add:
-                # Check if the record already exists (extra layer of validation)
                 existing_record = db.query(CompanyUser).filter(
                     CompanyUser.companyId == company_id,
                     CompanyUser.userId == user_id
@@ -221,18 +217,23 @@ def update_user(
                         userId=user_id
                     )
                     db.add(company_user)
-                    # Add to associated_companies with both ID and name
-                    company_name = db.query(Company.name).filter(Company.id == company_id).scalar()
-                    if company_name:
-                        associated_companies.append(CompanyUserDTO(id=company_id, name=company_name))
-                else:
-                    print(f"Duplicate record avoided for companyId: {company_id}, userId: {user_id}")
+
         else:
             # If no company_ids provided, remove all associated CompanyUser records
             db.query(CompanyUser).filter(CompanyUser.userId == user_id).delete(synchronize_session=False)
 
         db.commit()  # Commit the transaction after successful processing
-        db.refresh(user)  # Refresh user instance to ensure it's up to date
+
+        # Step 3: Refresh user and fetch associated companies
+        db.refresh(user)
+        associated_companies = db.query(
+            Company.id, Company.name
+        ).join(
+            CompanyUser, Company.id == CompanyUser.companyId
+        ).filter(
+            CompanyUser.userId == user.id,
+            Company.is_deleted == False
+        ).all()
 
         # Return user details along with associated companies
         return UserWCompanies(
@@ -243,7 +244,9 @@ def update_user(
             active=user.active,
             is_deleted=user.is_deleted,
             phone=user.phone,
-            companies=associated_companies
+            companies=[
+                CompanyUserDTO(id=company.id, name=company.name) for company in associated_companies
+            ]
         )
 
     except Exception as e:
@@ -258,7 +261,7 @@ def get_users(
     *, db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
 ) -> List[UserWCompanies]:
     """
-    Gets users in the database along with the names of the companies they are related to,
+    Gets users in the database along with the IDs and names of the companies they are related to,
     filtering out users and companies with is_deleted set to true.
     """
     if userToken.role not in [UserEnum.super_admin, UserEnum.admin]:
@@ -268,7 +271,9 @@ def get_users(
         # Query users along with related companies, filtering out is_deleted = true
         users_with_companies = db.query(
             Users,
-            func.array_agg(Company.name).label("companies")
+            func.array_agg(
+                func.json_build_object("id", Company.id, "name", Company.name)
+            ).label("companies")
         ).outerjoin(
             CompanyUser, CompanyUser.userId == Users.id
         ).outerjoin(
@@ -283,6 +288,10 @@ def get_users(
         # Format the response
         result = []
         for user, companies in users_with_companies:
+            # Convert each company JSON object to CompanyUserDTO
+            formatted_companies = [
+                CompanyUserDTO(**company) for company in companies if company and company.get("id") is not None
+            ]
             result.append(
                 UserWCompanies(
                     id=user.id,
@@ -293,7 +302,7 @@ def get_users(
                     is_deleted=user.is_deleted,
                     suspended=user.suspended,
                     phone=user.phone,
-                    companies=[company for company in companies if company]  # Filter out nulls
+                    companies=formatted_companies
                 )
             )
         return result
