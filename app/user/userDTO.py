@@ -67,6 +67,10 @@ class UserInDBBase(UserBase):
     class Config:
         orm_mode: True
 
+class UserWithOfferCount(UserBase):
+    id: int
+    offer_count: int
+
 # Properties to return to client
 class User(UserInDBBase):
     pass

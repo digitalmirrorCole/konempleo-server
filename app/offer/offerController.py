@@ -34,7 +34,7 @@ def create_offer(
     if not company:
         raise HTTPException(status_code=400, detail=f"Invalid company ID: {offer_in.companyId}")
     
-    # Check if the company exists
+    # Check if the cargo exists
     offerCargoId = offer_in.cargoId
     cargo = db.query(Cargo).filter(Cargo.id == offerCargoId).first()
     if not cargo:
@@ -70,7 +70,6 @@ def create_offer(
 
         # Increment the company's activeoffers
         company.activeoffers += 1
-        company.totaloffers += 1
         company.availableoffers = company.availableoffers -1
         db.add(company)
 
@@ -100,7 +99,7 @@ def update_offer(
 ):
     """
     Update specific fields in an offer: assigned_cvs, active status (only from True to False),
-    and update the company's activeoffers field through the relationships.
+    and update the company's activeoffers field using the offerCompany relationship.
     """
 
     # Ensure that the current user is a company user
@@ -136,13 +135,13 @@ def update_offer(
 
         # Update the company's activeoffers if the active status changed
         if active_status_changed:
-            # Fetch the related company through the offer_owner -> CompanyUser -> Company
+            # Fetch the related company directly through the offerCompany table
             company = (
                 db.query(Company)
-                .join(CompanyUser, CompanyUser.companyId == Company.id)
+                .join(CompanyOffer, CompanyOffer.companyId == Company.id)
                 .filter(
-                    CompanyUser.userId == offer.offer_owner,  # Match the offer owner
-                    Company.is_deleted == False               # Exclude deleted companies
+                    CompanyOffer.offerId == offer_id,  # Match the offer
+                    Company.is_deleted == False        # Exclude deleted companies
                 )
                 .first()
             )
@@ -158,7 +157,6 @@ def update_offer(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"An error occurred while updating the offer: {str(e)}")
-
 
 
 @offerRouter.get("/offers/company/details/{company_id}", response_model=List[OfferWithVitaeCount])

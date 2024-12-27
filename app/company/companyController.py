@@ -399,3 +399,86 @@ def get_all_companies(
 
     # Convert dictionary to a list of results
     return list(result_dict.values())
+
+@companyRouter.get("/company/{company_id}", status_code=200, response_model=CompanyWCountWithRecruiter)
+def get_company_by_id(
+    company_id: int,
+    db: Session = Depends(deps.get_db),
+    userToken: UserToken = Depends(get_user_current)
+) -> CompanyWCountWithRecruiter:
+    """
+    Get a specific company by its ID along with recruiter info and CV count.
+    Only includes companies that are not marked as deleted (is_deleted = False).
+    """
+
+    # Check if the user has access to the company
+    company_user_record = db.query(CompanyUser).filter(
+        CompanyUser.userId == userToken.id,
+        CompanyUser.companyId == company_id
+    ).first()
+
+    if not company_user_record:
+        raise HTTPException(status_code=403, detail="You do not have access to this company.")
+
+    # Subquery for recruiter information
+    recruiter_subquery = db.query(
+        CompanyUser.companyId.label("company_id"),
+        Users.fullname.label("recruiter_name"),
+        Users.email.label("recruiter_email"),
+        func.row_number().over(
+            partition_by=CompanyUser.companyId,
+            order_by=Users.id
+        ).label("row_number")
+    ).join(
+        Users, Users.id == CompanyUser.userId
+    ).filter(
+        Users.role == UserEnum.company,
+        Users.active == True,
+        Users.is_deleted == False  # Exclude deleted recruiters
+    ).subquery()
+
+    # Query to get the company with recruiter information and CV count
+    company_with_recruiter = db.query(
+        CompanyModel,
+        func.count(CVitae.Id).label('cv_count'),
+        recruiter_subquery.c.recruiter_name,
+        recruiter_subquery.c.recruiter_email
+    ).outerjoin(
+        CVitae, CVitae.companyId == CompanyModel.id
+    ).outerjoin(
+        recruiter_subquery, (recruiter_subquery.c.company_id == CompanyModel.id) &
+                            (recruiter_subquery.c.row_number == 1)
+    ).filter(
+        CompanyModel.id == company_id,
+        CompanyModel.is_deleted == False  # Exclude deleted companies
+    ).group_by(
+        CompanyModel.id,
+        recruiter_subquery.c.recruiter_name,
+        recruiter_subquery.c.recruiter_email
+    ).first()
+
+    if not company_with_recruiter:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    # Extract company details
+    company, cv_count, recruiter_name, recruiter_email = company_with_recruiter
+
+    # Format the response
+    return CompanyWCountWithRecruiter(
+        id=company.id,
+        name=company.name,
+        sector=company.sector,
+        document=company.document,
+        document_type=company.document_type,
+        city=company.city,
+        picture=company.picture,
+        activeoffers=company.activeoffers,
+        availableoffers=company.availableoffers,
+        totaloffers=company.totaloffers,
+        active=company.active,
+        is_deleted=company.is_deleted,
+        employees=company.employees,
+        cv_count=cv_count,
+        recruiter_name=recruiter_name,
+        recruiter_email=recruiter_email
+    )

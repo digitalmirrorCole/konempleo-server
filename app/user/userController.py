@@ -5,12 +5,13 @@ from sqlalchemy import func
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_password_hash, get_user_current
 from app.user.userService import userServices
-from app.user.userDTO import CompanyUserDTO, User, UserAdminCreateDTO, UserCreateDTO, UserCreateWithCompaniesResponseDTO, UserInsert, UserUpdateDTO, UserWCompanies
+from app.user.userDTO import CompanyUserDTO, User, UserAdminCreateDTO, UserCreateDTO, UserCreateWithCompaniesResponseDTO, UserInsert, UserUpdateDTO, UserWCompanies, UserWithOfferCount
 from sqlalchemy.orm import Session
 from app import deps
 from typing import List, Optional
 
 from models.models import Company, CompanyUser, UserEnum, Users
+from models.models import Offer as OfferModel
 
 
 userRouter = APIRouter()
@@ -319,14 +320,15 @@ def get_users(
         raise HTTPException(status_code=500, detail="Error fetching the users")
 
 
-@userRouter.get("/users/company/{company_id}", status_code=200, response_model=List[User])
+@userRouter.get("/users/company/{company_id}", status_code=200, response_model=List[UserWithOfferCount])
 def get_users_by_company(
     company_id: int, 
     db: Session = Depends(deps.get_db), 
     userToken: UserToken = Depends(get_user_current)
-) -> List[User]:
+) -> List[UserWithOfferCount]:
     """
-    Get all users associated with a given company, excluding deleted users and companies.
+    Get all users associated with a given company, excluding deleted users and companies,
+    along with the count of offers owned by each user.
     """
     # Check if the requesting user has the required permissions
     if userToken.role not in [UserEnum.super_admin, UserEnum.company]:
@@ -334,16 +336,42 @@ def get_users_by_company(
 
     try:
         # Query to get all users related to the given company, filtering for non-deleted records
-        users = db.query(Users).join(CompanyUser).join(Company).filter(
+        users_with_offer_count = db.query(
+            Users,
+            func.count(OfferModel.id).filter(OfferModel.offer_owner == Users.id).label("offer_count")
+        ).join(
+            CompanyUser, CompanyUser.userId == Users.id
+        ).join(
+            Company, Company.id == CompanyUser.companyId
+        ).outerjoin(
+            OfferModel, OfferModel.offer_owner == Users.id  # Left join to count offers owned by the user
+        ).filter(
             CompanyUser.companyId == company_id,
             Users.is_deleted == False,  # Exclude deleted users
             Company.is_deleted == False  # Exclude deleted companies
+        ).group_by(
+            Users.id
         ).all()
 
-        if not users:
+        if not users_with_offer_count:
             raise HTTPException(status_code=404, detail=f"No users found for company ID: {company_id}")
 
-        return users
+        # Format the result
+        result = [
+            UserWithOfferCount(
+                id=user.id,
+                fullname=user.fullname,
+                email=user.email,
+                role=user.role,
+                active=user.active,
+                is_deleted=user.is_deleted,
+                phone=user.phone,
+                offer_count=offer_count
+            )
+            for user, offer_count in users_with_offer_count
+        ]
+
+        return result
 
     except Exception as e:
         print(f"Error occurred while fetching users for company ID {company_id}: {str(e)}")
