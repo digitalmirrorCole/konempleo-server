@@ -5,7 +5,7 @@ from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadF
 from sqlalchemy import func
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_password_hash, get_user_current
-from app.company.companyDTO import Company, CompanyCreate, CompanyUpdate, CompanyWCount, CompanyWCountWithRecruiter
+from app.company.companyDTO import Company, CompanyCreate, CompanyInDBBaseWCount, CompanyUpdate, CompanyWCount, CompanyWCountWithRecruiter
 from sqlalchemy.orm import Session
 from app.company.companyService import upload_picture_to_s3
 from app import deps
@@ -400,16 +400,33 @@ def get_all_companies(
     # Convert dictionary to a list of results
     return list(result_dict.values())
 
-@companyRouter.get("/company/{company_id}", status_code=200, response_model=CompanyWCountWithRecruiter)
+@companyRouter.get("/company/{company_id}", status_code=200, response_model=CompanyInDBBaseWCount)
 def get_company_by_id(
     company_id: int,
     db: Session = Depends(deps.get_db),
     userToken: UserToken = Depends(get_user_current)
-) -> CompanyWCountWithRecruiter:
+) -> CompanyInDBBaseWCount:
     """
-    Get a specific company by its ID along with recruiter info and CV count.
+    Get a specific company by its ID along with admin info, recruiter info, and CV count.
     Only includes companies that are not marked as deleted (is_deleted = False).
     """
+
+    # Subquery for admin information
+    admin_subquery = db.query(
+        CompanyUser.companyId.label("company_id"),
+        Users.fullname.label("admin_name"),
+        Users.email.label("admin_email"),
+        func.row_number().over(
+            partition_by=CompanyUser.companyId,
+            order_by=Users.id
+        ).label("row_number")
+    ).join(
+        Users, Users.id == CompanyUser.userId
+    ).filter(
+        Users.role == UserEnum.admin,
+        Users.active == True,
+        Users.is_deleted == False  # Exclude deleted admin users
+    ).subquery()
 
     # Subquery for recruiter information
     recruiter_subquery = db.query(
@@ -428,14 +445,19 @@ def get_company_by_id(
         Users.is_deleted == False  # Exclude deleted recruiters
     ).subquery()
 
-    # Query to get the company with recruiter information and CV count
-    company_with_recruiter = db.query(
+    # Query to get the company with admin, recruiter, and CV count information
+    company_with_details = db.query(
         CompanyModel,
         func.count(CVitae.Id).label('cv_count'),
+        admin_subquery.c.admin_name,
+        admin_subquery.c.admin_email,
         recruiter_subquery.c.recruiter_name,
         recruiter_subquery.c.recruiter_email
     ).outerjoin(
         CVitae, CVitae.companyId == CompanyModel.id
+    ).outerjoin(
+        admin_subquery, (admin_subquery.c.company_id == CompanyModel.id) &
+                        (admin_subquery.c.row_number == 1)
     ).outerjoin(
         recruiter_subquery, (recruiter_subquery.c.company_id == CompanyModel.id) &
                             (recruiter_subquery.c.row_number == 1)
@@ -444,15 +466,15 @@ def get_company_by_id(
         CompanyModel.is_deleted == False  # Exclude deleted companies
     ).group_by(
         CompanyModel.id,
-        recruiter_subquery.c.recruiter_name,
-        recruiter_subquery.c.recruiter_email
+        admin_subquery.c.admin_name, admin_subquery.c.admin_email,
+        recruiter_subquery.c.recruiter_name, recruiter_subquery.c.recruiter_email
     ).first()
 
-    if not company_with_recruiter:
+    if not company_with_details:
         raise HTTPException(status_code=404, detail="Company not found.")
 
     # Extract company details
-    company, cv_count, recruiter_name, recruiter_email = company_with_recruiter
+    company, cv_count, admin_name, admin_email, recruiter_name, recruiter_email = company_with_details
 
     # Format the response
     return CompanyWCountWithRecruiter(
@@ -470,6 +492,8 @@ def get_company_by_id(
         is_deleted=company.is_deleted,
         employees=company.employees,
         cv_count=cv_count,
+        admin_name=admin_name,
+        admin_email=admin_email,
         recruiter_name=recruiter_name,
         recruiter_email=recruiter_email
     )
