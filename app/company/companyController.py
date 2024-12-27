@@ -411,15 +411,6 @@ def get_company_by_id(
     Only includes companies that are not marked as deleted (is_deleted = False).
     """
 
-    # Check if the user has access to the company
-    company_user_record = db.query(CompanyUser).filter(
-        CompanyUser.userId == userToken.id,
-        CompanyUser.companyId == company_id
-    ).first()
-
-    if not company_user_record:
-        raise HTTPException(status_code=403, detail="You do not have access to this company.")
-
     # Subquery for recruiter information
     recruiter_subquery = db.query(
         CompanyUser.companyId.label("company_id"),
