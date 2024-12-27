@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 echo "Running alembic upgrade"
 alembic upgrade head
