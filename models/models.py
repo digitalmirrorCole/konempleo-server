@@ -129,6 +129,7 @@ class Offer(Base):
     offer_owner = Column(Integer, ForeignKey('users.id'), nullable=False)
     assigned_cvs = Column(Integer, server_default=text('0'))
     filter_questions = Column(String)
+    active = Column(Boolean, default=True)
 
     
     offer_skills = relationship('OfferSkill', back_populates='offer')
