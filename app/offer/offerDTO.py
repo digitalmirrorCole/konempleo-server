@@ -27,7 +27,7 @@ class OfferBase(BaseModel):
     filter_questions: Optional[str] = None
     assigned_cvs: Optional[int] = 0
     whatsapp_message: Optional[str] = None
-    active = Optional[bool] = True
+    active: Optional[bool] = True
 
 # DTO for creating an Offer
 class OfferCreateDTO(OfferBase):
