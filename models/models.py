@@ -123,7 +123,6 @@ class Offer(Base):
     disabled = Column(Boolean, default=False)
     experience_years = Column(Integer)
     offer_type = Column(String)
-    whatsapp_message = Column(String)
     ed_required = Column(Enum(educationEnum))
     cargoId = Column(Integer, ForeignKey('cargo.id'))
     offer_owner = Column(Integer, ForeignKey('users.id'), nullable=False)
