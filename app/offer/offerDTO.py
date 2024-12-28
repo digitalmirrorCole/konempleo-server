@@ -12,7 +12,7 @@ class OfferBase(BaseModel):
     vacants: Optional[int] = None
     contract_type: Optional[contractEnum] = None
     salary: Optional[str] = None
-    city: Optional[int] = None
+    city: Optional[str] = None
     shift: Optional[shiftEnum] = None
     gender: Optional[genderEnum] = None
     military_notebook: Optional[militaryEnum] = None
@@ -26,7 +26,6 @@ class OfferBase(BaseModel):
     cargoId: Optional[int] = None
     filter_questions: Optional[str] = None
     assigned_cvs: Optional[int] = 0
-    whatsapp_message: Optional[str] = None
     active: Optional[bool] = True
 
 # DTO for creating an Offer
