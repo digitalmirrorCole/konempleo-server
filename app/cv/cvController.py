@@ -4,9 +4,12 @@ from typing import List
 from fastapi import APIRouter, Depends, File, UploadFile, FastAPI, BackgroundTasks, HTTPException
 from requests import Session
 
+from app.auth.authDTO import UserToken
+from app.auth.authService import get_user_current
 from app.cv.cvService import fetch_background_check_result, process_batch
+from app.cv.vitaeOfferDTO import VitaeOfferResponseDTO
 from app.deps import get_db
-from models.models import Company, Offer, CVitae, OfferSkill, Skill
+from models.models import Company, Offer, CVitae, OfferSkill, Skill, VitaeOffer
 import requests
 from requests.auth import HTTPBasicAuth
 from datetime import datetime
@@ -117,3 +120,98 @@ async def background_check(cvitae_id: int, db: Session = Depends(get_db), backgr
 
     return {"jobId": job_id, "message": "Background check initiated, results will be fetched after a minute."}
 
+
+@cvRouter.get("/cvoffers/{offer_id}", status_code=200, response_model=List[VitaeOfferResponseDTO])
+def get_cvoffers_by_offer(
+    offer_id: int,
+    db: Session = Depends(get_db),
+    userToken: UserToken = Depends(get_user_current)
+) -> List[VitaeOfferResponseDTO]:
+    """
+    Get all VitaeOffer records for a given offer ID with details from CVitae and VitaeOffer tables.
+    """
+    try:
+        # Query to get the VitaeOffer records for the given offer ID
+        results = db.query(
+            VitaeOffer.id.label("vitae_offer_id"),
+            CVitae.candidate_name,
+            CVitae.url,
+            CVitae.background_check,
+            CVitae.candidate_phone,
+            CVitae.candidate_mail,
+            VitaeOffer.whatsapp_status,
+            VitaeOffer.response_score,
+            VitaeOffer.status
+        ).join(
+            CVitae, CVitae.id == VitaeOffer.cvitaeId
+        ).filter(
+            VitaeOffer.offerId == offer_id
+        ).all()
+
+        if not results:
+            raise HTTPException(status_code=404, detail=f"No CV offers found for offer ID {offer_id}")
+
+        # Format the response
+        response = [
+            VitaeOfferResponseDTO(
+                vitae_offer_id=row.vitae_offer_id,
+                candidate_name=row.candidate_name,
+                url=row.url,
+                background_check=row.background_check,
+                candidate_phone=row.candidate_phone,
+                candidate_mail=row.candidate_mail,
+                whatsapp_status=row.whatsapp_status,
+                response_score=row.response_score,
+                status=row.status
+            )
+            for row in results
+        ]
+
+        return response
+
+    except Exception as e:
+        print(f"Error fetching CV offers for offer ID {offer_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching CV offers.")
+
+
+from pydantic import BaseModel
+from fastapi import HTTPException, status
+
+# Request DTO for updating the status
+class UpdateVitaeOfferStatusDTO(BaseModel):
+    status: str
+
+@cvRouter.put("/cvoffers/{vitae_offer_id}/status", status_code=200)
+def update_vitae_offer_status(
+    vitae_offer_id: int,
+    status_update: UpdateVitaeOfferStatusDTO,
+    db: Session = Depends(get_db),
+    userToken: UserToken = Depends(get_user_current)
+) -> dict:
+    """
+    Update the status of a VitaeOffer record by its ID.
+    """
+    try:
+        # Validate the provided status
+        allowed_statuses = ['pending', 'hired']
+        if status_update.status not in allowed_statuses:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status. Allowed statuses are: {', '.join(allowed_statuses)}"
+            )
+
+        # Fetch the VitaeOffer record
+        vitae_offer = db.query(VitaeOffer).filter(VitaeOffer.id == vitae_offer_id).first()
+        if not vitae_offer:
+            raise HTTPException(status_code=404, detail=f"VitaeOffer with ID {vitae_offer_id} not found.")
+
+        # Update the status
+        vitae_offer.status = status_update.status
+        db.commit()
+        db.refresh(vitae_offer)
+
+        return {"detail": f"VitaeOffer ID {vitae_offer_id} status updated to {status_update.status}"}
+
+    except Exception as e:
+        print(f"Error updating status for VitaeOffer ID {vitae_offer_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while updating the status.")
