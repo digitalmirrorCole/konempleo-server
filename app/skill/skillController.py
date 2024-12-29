@@ -81,11 +81,12 @@ def get_skills_by_cargo(
         if not cargo_skills:
             return {"detail": f"No skills found for cargo ID: {cargo_id}"}
 
-        # Format the response with skill names
-        skills_list = [skill.name for skill in cargo_skills]
+        # Format the response with skill IDs and names
+        skills_list = [{"id": skill.id, "name": skill.name} for skill in cargo_skills]
         
         return {"cargo": cargo.name, "skills": skills_list}
 
     except Exception as e:
         print(f"Error occurred while retrieving skills: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while retrieving the skills.")
+

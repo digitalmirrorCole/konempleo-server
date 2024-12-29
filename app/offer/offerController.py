@@ -103,7 +103,7 @@ def update_offer(
     """
 
     # Ensure that the current user is a company user
-    if userToken.role not in [UserEnum.company_recruit, UserEnum.company]:
+    if userToken.role not in [UserEnum.super_admin, UserEnum.company_recruit, UserEnum.company]:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
 
     # Fetch the offer by ID
