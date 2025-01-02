@@ -6,10 +6,10 @@ from requests import Session
 
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_user_current
-from app.cv.cvService import fetch_background_check_result, process_batch
-from app.cv.vitaeOfferDTO import VitaeOfferResponseDTO
+from app.cv.cvService import fetch_background_check_result, get_token, process_batch
+from app.cv.vitaeOfferDTO import CampaignRequestDTO, VitaeOfferResponseDTO
 from app.deps import get_db
-from models.models import Company, Offer, CVitae, OfferSkill, Skill, VitaeOffer
+from models.models import Company, Offer, CVitae, OfferSkill, Skill, UserEnum, VitaeOffer
 import requests
 from requests.auth import HTTPBasicAuth
 from datetime import datetime
@@ -215,3 +215,77 @@ def update_vitae_offer_status(
     except Exception as e:
         print(f"Error updating status for VitaeOffer ID {vitae_offer_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while updating the status.")
+
+@cvRouter.post("/cvoffers/send-message/")
+def send_campaign(
+    campaign_data: CampaignRequestDTO,
+    db: Session = Depends(get_db),
+    userToken: UserToken = Depends(get_user_current)
+):
+    try:
+        # Check if the user has the required role
+        if userToken.role not in [UserEnum.super_admin, UserEnum.company, UserEnum.company_recruit]:
+            raise HTTPException(status_code=403, detail="You do not have permission to access this endpoint.")
+
+        # Check if the VitaeOffer record exists
+        vitae_offer = db.query(VitaeOffer).filter(VitaeOffer.id == campaign_data.vitae_offer_id).first()
+        if not vitae_offer:
+            raise HTTPException(status_code=404, detail=f"VitaeOffer record with ID {campaign_data.vitae_offer_id} not found.")
+
+        # Check if the offerId exists and matches the VitaeOffer record
+        if vitae_offer.offerId != campaign_data.offerId:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Mismatch: VitaeOffer record with ID {campaign_data.vitae_offer_id} is not associated with offer ID {campaign_data.offerId}."
+            )
+
+        offer = db.query(Offer).filter(Offer.id == campaign_data.offerId).first()
+        if not offer:
+            raise HTTPException(status_code=404, detail=f"Offer with ID {campaign_data.offerId} not found.")
+
+        # Get the token
+        token = get_token()
+        print(f"+57{campaign_data.candidate_phone}")
+        # Extract the template ID from the environment
+        template_id = os.getenv("SDTEMPLATE_ID")
+        if not template_id:
+            raise HTTPException(status_code=500, detail="Template ID is not configured.")
+
+        # Prepare the payload
+        payload = {
+            "template_id": int(template_id),
+            "receiver": f"+57{campaign_data.candidate_phone}",
+            "tags_values": f"{campaign_data.candidate_name},{campaign_data.offer_name},{campaign_data.zone},{campaign_data.salary},{campaign_data.contract}"
+        }
+
+        # Make the POST request
+        url = "https://botai.smartdataautomation.com/massive-campaigns/template/whatsapp/message"
+        headers = {"Authorization": f"Bearer {token}"}
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+
+        # Parse the response
+        response_data = response.json()
+
+        # Extract the message_id and update the smartdataId
+        message_id = response_data.get("message_id")
+        if not message_id:
+            raise HTTPException(status_code=500, detail="Response did not contain a message_id.")
+
+        # Update the VitaeOffer record
+        vitae_offer.whatsapp_status = "pending_response"
+        vitae_offer.smartdataId = message_id
+        db.commit()
+        db.refresh(vitae_offer)
+
+        return {
+            "detail": "Message sent successfully, WhatsApp status and SmartdataId updated",
+            "response": response_data
+        }
+
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send campaign: {str(e)}")
+    except Exception as e:
+        db.rollback()
+        print(f"Error: {str(e)}")  # Log the error
+        raise HTTPException(status_code=500, detail=f"Failed to update VitaeOffer record: {str(e)}")

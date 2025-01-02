@@ -197,7 +197,7 @@ class VitaeOffer(Base):
     ai_response = Column(Text)
     response_score = Column(Float)
     whatsapp_status = Column(Enum('notsent', 'pending_response', 'interested', 'not_interested', name='whatsapp_status_enum'))
-    smartdataId = Column(Integer)
+    smartdataId = Column(String)
     comments = Column(String(160))
 
     cvitae = relationship('CVitae', back_populates='Vitae_offers')

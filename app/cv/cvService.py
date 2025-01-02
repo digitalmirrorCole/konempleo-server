@@ -356,3 +356,58 @@ def fetch_background_check_result(job_id: str, cvitae_id: int, db: Session, retr
     # If max retries are reached and status is still "procesando"
     print(f"Max retries reached. Background check for job ID {job_id} is still processing after {max_retries} attempts.")
 
+
+# Cache to store tokens and expiration times
+token_cache = {
+    "access_token": None,
+    "refresh_token": None,
+    "expires_at": None
+}
+
+def get_token():
+    """
+    Retrieve a valid access token, refreshing it if necessary.
+    """
+    current_time = time.time()
+
+    # If the access token is still valid, return it
+    if token_cache["access_token"] and token_cache["expires_at"] > current_time:
+        return token_cache["access_token"]
+
+    # Retrieve credentials from environment variables
+    username = os.getenv("SDUSERNAME")
+    password = os.getenv("SDPASSWORD")
+    basic_auth_token = os.getenv("SDBASIC_AUTH_TOKEN")
+
+    print(username)
+    print(password)
+    print(basic_auth_token)
+
+    if not username or not password or not basic_auth_token:
+        raise HTTPException(status_code=500, detail="Authentication credentials are not properly configured.")
+
+    # If no valid token, request a new one
+    try:
+        response = requests.post(
+            "https://botai.smartdataautomation.com/api/o/token/",
+            headers={
+                "Authorization": f"Basic {basic_auth_token}"
+            },
+            data={
+                "username": username,
+                "password": password,
+                "grant_type": "password"
+            }
+        )
+        response.raise_for_status()
+        token_data = response.json()
+
+        # Update the token cache
+        token_cache["access_token"] = token_data["access_token"]
+        token_cache["refresh_token"] = token_data.get("refresh_token")
+        token_cache["expires_at"] = current_time + token_data["expires_in"] - 10  # Buffer for safety
+
+        return token_data["access_token"]
+
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve token: {str(e)}")

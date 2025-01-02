@@ -14,3 +14,13 @@ class VitaeOfferResponseDTO(BaseModel):
 
 class UpdateVitaeOfferStatusDTO(BaseModel):
     status: str
+
+class CampaignRequestDTO(BaseModel):
+    candidate_phone: str
+    candidate_name: str
+    offer_name: str
+    zone: str
+    salary: str
+    contract: str
+    offerId: int
+    vitae_offer_id: int 

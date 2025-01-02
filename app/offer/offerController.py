@@ -203,7 +203,7 @@ def get_offers_by_owner(db: Session = Depends(get_db), userToken: UserToken = De
     """
 
     # Ensure only super_admin or company users can access this
-    if userToken.role not in [UserEnum.super_admin, UserEnum.company]:
+    if userToken.role not in [UserEnum.super_admin, UserEnum.company, UserEnum.company_recruit]:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
     
     current_user_id = userToken.id
