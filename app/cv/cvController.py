@@ -1,13 +1,13 @@
 from concurrent.futures import ThreadPoolExecutor 
 import os
 from typing import List
-from fastapi import APIRouter, Depends, File, UploadFile, FastAPI, BackgroundTasks, HTTPException
+from fastapi import APIRouter, Depends, File, UploadFile, BackgroundTasks, HTTPException, status
 from requests import Session
 
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_user_current
 from app.cv.cvService import fetch_background_check_result, get_token, process_batch
-from app.cv.vitaeOfferDTO import CampaignRequestDTO, VitaeOfferResponseDTO
+from app.cv.vitaeOfferDTO import CampaignRequestDTO, UpdateVitaeOfferStatusDTO, VitaeOfferResponseDTO
 from app.deps import get_db
 from models.models import Company, Offer, CVitae, OfferSkill, Skill, UserEnum, VitaeOffer
 import requests
@@ -143,7 +143,7 @@ def get_cvoffers_by_offer(
             VitaeOffer.response_score,
             VitaeOffer.status
         ).join(
-            CVitae, CVitae.id == VitaeOffer.cvitaeId
+            CVitae, CVitae.Id == VitaeOffer.cvitaeId  # Use Id instead of id
         ).filter(
             VitaeOffer.offerId == offer_id
         ).all()
@@ -173,14 +173,6 @@ def get_cvoffers_by_offer(
         print(f"Error fetching CV offers for offer ID {offer_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while fetching CV offers.")
 
-
-from pydantic import BaseModel
-from fastapi import HTTPException, status
-
-# Request DTO for updating the status
-class UpdateVitaeOfferStatusDTO(BaseModel):
-    status: str
-
 @cvRouter.put("/cvoffers/{vitae_offer_id}/status", status_code=200)
 def update_vitae_offer_status(
     vitae_offer_id: int,
@@ -189,12 +181,12 @@ def update_vitae_offer_status(
     userToken: UserToken = Depends(get_user_current)
 ) -> dict:
     """
-    Update the status of a VitaeOffer record by its ID.
+    Update the status and comments of a VitaeOffer record by its ID.
     """
     try:
-        # Validate the provided status
+        # Validate the provided status if provided
         allowed_statuses = ['pending', 'hired']
-        if status_update.status not in allowed_statuses:
+        if status_update.status and status_update.status not in allowed_statuses:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid status. Allowed statuses are: {', '.join(allowed_statuses)}"
@@ -205,16 +197,26 @@ def update_vitae_offer_status(
         if not vitae_offer:
             raise HTTPException(status_code=404, detail=f"VitaeOffer with ID {vitae_offer_id} not found.")
 
-        # Update the status
-        vitae_offer.status = status_update.status
+        # Update the status if provided
+        if status_update.status:
+            vitae_offer.status = status_update.status
+
+        # Update the comments if provided
+        if status_update.comments is not None:
+            vitae_offer.comments = status_update.comments
+
         db.commit()
         db.refresh(vitae_offer)
 
-        return {"detail": f"VitaeOffer ID {vitae_offer_id} status updated to {status_update.status}"}
+        return {
+            "detail": f"VitaeOffer ID {vitae_offer_id} updated successfully",
+            "status": vitae_offer.status,
+            "comments": vitae_offer.comments
+        }
 
     except Exception as e:
-        print(f"Error updating status for VitaeOffer ID {vitae_offer_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while updating the status.")
+        print(f"Error updating VitaeOffer ID {vitae_offer_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while updating the VitaeOffer.")
 
 @cvRouter.post("/cvoffers/send-message/")
 def send_campaign(

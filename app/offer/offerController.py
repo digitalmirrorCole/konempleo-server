@@ -101,17 +101,16 @@ def update_offer(
     Update specific fields in an offer: assigned_cvs, active status (only from True to False),
     and update the company's activeoffers field using the offerCompany relationship.
     """
-
-    # Ensure that the current user is a company user
-    if userToken.role not in [UserEnum.super_admin, UserEnum.company_recruit, UserEnum.company]:
-        raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
-
-    # Fetch the offer by ID
-    offer = db.query(OfferModel).filter(OfferModel.id == offer_id).first()
-    if not offer:
-        raise HTTPException(status_code=404, detail="Offer not found")
-
     try:
+        # Ensure that the current user is a company user
+        if userToken.role not in [UserEnum.super_admin, UserEnum.company_recruit, UserEnum.company]:
+            raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
+
+        # Fetch the offer by ID
+        offer = db.query(OfferModel).filter(OfferModel.id == offer_id).first()
+        if not offer:
+            raise HTTPException(status_code=404, detail="Offer not found")
+
         # Track if the active status changes
         active_status_changed = False
 
@@ -124,7 +123,7 @@ def update_offer(
             if offer.active and not offer_update.active:
                 active_status_changed = True
                 offer.active = False
-            else:
+            elif offer.active != offer_update.active:
                 raise HTTPException(
                     status_code=400,
                     detail="The 'active' field can only be updated from True to False."
@@ -156,7 +155,7 @@ def update_offer(
 
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"An error occurred while updating the offer: {str(e)}")
+        print(f"Error while updating offer ID {offer_id}: {str(e)}")  # Log t
 
 
 @offerRouter.get("/offers/company/details/{company_id}", response_model=List[OfferWithVitaeCount])

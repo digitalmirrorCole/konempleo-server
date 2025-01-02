@@ -13,7 +13,8 @@ class VitaeOfferResponseDTO(BaseModel):
     status: Optional[str]
 
 class UpdateVitaeOfferStatusDTO(BaseModel):
-    status: str
+    status: Optional[str]  # Status is now optional
+    comments: Optional[str]  # New field for comments
 
 class CampaignRequestDTO(BaseModel):
     candidate_phone: str
