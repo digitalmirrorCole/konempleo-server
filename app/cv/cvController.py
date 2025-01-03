@@ -158,8 +158,9 @@ def get_cvoffers_by_offer(
             VitaeOffer.offerId == offer_id
         ).all()
 
+        # If no results, return an empty array
         if not results:
-            raise HTTPException(status_code=404, detail=f"No CV offers found for offer ID {offer_id}")
+            return []
 
         # Format the response
         response = [
