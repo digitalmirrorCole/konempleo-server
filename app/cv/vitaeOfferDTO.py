@@ -8,6 +8,7 @@ class VitaeOfferResponseDTO(BaseModel):
     background_check: Optional[bool]
     candidate_phone: Optional[str]
     candidate_mail: Optional[str]
+    smartdataId : Optional[str]
     whatsapp_status: Optional[str]
     response_score: Optional[float]
     status: Optional[str]

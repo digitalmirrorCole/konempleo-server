@@ -2,7 +2,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor 
 import os
 from typing import List
-from fastapi import APIRouter, Depends, File, UploadFile, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, Body, Depends, File, Query, UploadFile, BackgroundTasks, HTTPException, status
 from requests import Session
 
 from app.auth.authDTO import UserToken
@@ -150,6 +150,7 @@ def get_cvoffers_by_offer(
             CVitae.candidate_phone,
             CVitae.candidate_mail,
             VitaeOffer.whatsapp_status,
+            VitaeOffer.smartdataId,
             VitaeOffer.response_score,
             VitaeOffer.status
         ).join(
@@ -171,6 +172,7 @@ def get_cvoffers_by_offer(
                 background_check=row.background_check,
                 candidate_phone=row.candidate_phone,
                 candidate_mail=row.candidate_mail,
+                smartdataId=row.smartdataId,
                 whatsapp_status=row.whatsapp_status,
                 response_score=row.response_score,
                 status=row.status
@@ -302,3 +304,44 @@ def send_campaign(
         db.rollback()
         print(f"Error: {str(e)}")  # Log the error
         raise HTTPException(status_code=500, detail=f"Failed to update VitaeOffer record: {str(e)}")
+
+@cvRouter.put("/cvoffers/update-response/")
+def update_whatsapp_status(
+    smartdataId: str = Query(..., description="The SmartData ID of the VitaeOffer"),
+    offerId: int = Query(..., description="The Offer ID associated with the VitaeOffer"),
+    userResponse: str = Body(..., description="The user response ('interested' or 'not_interested')"),
+    db: Session = Depends(get_db),
+    userToken: UserToken = Depends(get_user_current)
+):
+    """
+    Update the WhatsApp status of a VitaeOffer record based on user response.
+    Only accessible to users with the 'integrations' role.
+    """
+    # Check if the user has the required role
+    if userToken.role != UserEnum.integrations:
+        raise HTTPException(status_code=403, detail="You do not have permission to access this endpoint.")
+
+    try:
+        # Fetch the VitaeOffer record
+        vitae_offer = db.query(VitaeOffer).filter(
+            VitaeOffer.smartdataId == smartdataId,
+            VitaeOffer.offerId == offerId
+        ).first()
+
+        if not vitae_offer:
+            raise HTTPException(status_code=404, detail="VitaeOffer record not found.")
+
+        # Update the whatsapp_status based on user response
+        if userResponse not in ["interested", "not_interested"]:
+            raise HTTPException(status_code=400, detail="Invalid user response.")
+
+        vitae_offer.whatsapp_status = userResponse
+        db.commit()
+        db.refresh(vitae_offer)
+
+        return {"detail": f"WhatsApp status updated to '{userResponse}' for VitaeOffer ID {vitae_offer.id}"}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+
