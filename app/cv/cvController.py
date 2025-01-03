@@ -1,3 +1,4 @@
+import asyncio
 from concurrent.futures import ThreadPoolExecutor 
 import os
 from typing import List
@@ -18,12 +19,16 @@ cvRouter = APIRouter()
 cvRouter.tags = ['CV']
 
 @cvRouter.post("/offers/upload-cvs/", status_code=201, response_model=None)
-def upload_cvs(
-    companyId: int, 
-    offerId: int, 
-    files: List[UploadFile] = File(...), 
-    db: Session = Depends(get_db)  # Pass an active session here
+async def upload_cvs(
+    companyId: int,
+    offerId: int,
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db)
 ):
+    """
+    Asynchronous endpoint to process and upload CVs for a given offer and company.
+    """
+
     company = db.query(Company).filter(Company.id == companyId).first()
     offer = db.query(Offer).filter(Offer.id == offerId).first()
 
@@ -40,29 +45,34 @@ def upload_cvs(
     genre_offer = offer.gender
     experience_offer = offer.experience_years
 
-    file_batches = [files[i:i+10] for i in range(0, len(files), 10)]
+    # Split files into batches
+    file_batches = [files[i:i + 10] for i in range(0, len(files), 10)]
 
-    with ThreadPoolExecutor() as executor:
-        futures = [
-            executor.submit(
-                process_batch, 
-                batch, 
-                companyId, 
-                offerId, 
-                skills_list, 
-                city_offer, 
-                age_offer, 
-                genre_offer, 
-                experience_offer, 
-                db  # Pass the active session directly
-            ) 
-            for batch in file_batches
-        ]
+    async def process_files(batch):
+        """
+        Process a batch of files asynchronously.
+        """
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            await loop.run_in_executor(
+                executor,
+                process_batch,
+                batch,
+                companyId,
+                offerId,
+                skills_list,
+                city_offer,
+                age_offer,
+                genre_offer,
+                experience_offer,
+                db
+            )
 
-    for future in futures:
-        future.result()
+    # Process all batches concurrently
+    await asyncio.gather(*(process_files(batch) for batch in file_batches))
 
     return {"detail": "All files processed successfully"}
+
 
 
 @cvRouter.get("/background-check/{cvitae_id}")

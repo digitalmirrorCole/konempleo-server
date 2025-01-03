@@ -193,7 +193,7 @@ class VitaeOffer(Base):
     id = Column(Integer, primary_key=True)
     cvitaeId = Column(Integer, ForeignKey('cvitae.Id'), nullable=False)
     offerId = Column(Integer, ForeignKey('offers.id'), nullable=False)
-    status = Column(Enum('pending', 'hired', name='status_enum'))
+    status = Column(Enum('pending', 'hired', 'error_processing', 'rejected', name='status_enum'))
     ai_response = Column(Text)
     response_score = Column(Float)
     whatsapp_status = Column(Enum('notsent', 'pending_response', 'interested', 'not_interested', name='whatsapp_status_enum'))

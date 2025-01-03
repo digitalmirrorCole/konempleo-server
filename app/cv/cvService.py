@@ -88,14 +88,14 @@ def clean_symbols(text):
 
 
 def process_batch(
-    batch: List[UploadFile], 
-    companyId: int, 
-    offerId: int, 
-    skills_list: List[str], 
-    city_offer: str, 
-    age_offer: str, 
-    genre_offer: str, 
-    experience_offer: int, 
+    batch: List[UploadFile],
+    companyId: int,
+    offerId: int,
+    skills_list: List[str],
+    city_offer: str,
+    age_offer: str,
+    genre_offer: str,
+    experience_offer: int,
     db: Session
 ):
     try:
@@ -119,21 +119,23 @@ def process_batch(
             else:
                 raise HTTPException(status_code=400, detail=f"Unsupported file format: {file_extension}")
 
-            print(f"Extracted text for file {file.filename}: {cv_text}...")  # Show preview of text
+            # s3_url = upload_to_s3(file, f"{companyId}/{offerId}/{file.filename}")
+
+            # Add to text preview
             cv_texts.append(f"### Candidate #{len(cv_texts) + 1} ###\n{cv_text}")
 
-            # Create CVitae record and add to database
+            # Create CVitae record
             cvitae = CVitae(
                 url=s3_url,
                 companyId=companyId,
                 extension=file_extension,
-                cvtext = cv_text
+                cvtext=cv_text
             )
             db.add(cvitae)
-            db.flush()  # Get the CVitae ID
+            db.flush()
             cvitae_records.append(cvitae)
 
-            # Create VitaeOffer record for each CV
+            # Create VitaeOffer record
             vitae_offer = VitaeOffer(
                 cvitaeId=cvitae.Id,
                 offerId=offerId,
@@ -141,12 +143,31 @@ def process_batch(
             )
             db.add(vitae_offer)
 
-        db.flush()  # Ensure all CVitae and VitaeOffer records are stored in DB
+        db.commit()  # Commit CVitae and VitaeOffer records to DB
 
-        print(cv_texts)
+        # Analyze CVs with GPT and update VitaeOffer records
+        analyze_and_update_vitae_offers(cv_texts, skills_list, city_offer, age_offer, genre_offer, experience_offer, db, offerId, cvitae_records)
 
+    except Exception as e:
+        db.rollback()
+        print(f"Error processing batch: {str(e)}")
+        raise
+
+
+def analyze_and_update_vitae_offers(
+    cv_texts: List[str],
+    skills_list: List[str],
+    city_offer: str,
+    age_offer: str,
+    genre_offer: str,
+    experience_offer: int,
+    db: Session,
+    offerId: int,
+    cvitae_records: List[CVitae]
+):
+    try:
+        # Prepare the GPT prompt
         skills_list_str = ", ".join(skills_list)
-
         full_prompt = f"""
         Actúa como un experto en [Reclutamiento, Selección de Personal, Análisis de
         Hojas de Vida]. El objetivo de este super prompt es evaluar y calificar las hojas de
@@ -245,30 +266,39 @@ def process_batch(
         {cv_texts}
             """
 
-        # Creating the messages list for the chat format
+        # Create OpenAI chat messages
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": full_prompt}
         ]
 
-        # Send batch of CV texts to GPT-4-turbo-128k in one request
+        # Make the OpenAI request
         response = openai.chat.completions.create(
             model="gpt-3.5-turbo-16k",
             messages=messages,
             temperature=0
         )
 
-        # Process the response for each CV in the batch
+        # Process the GPT response
         raw_response = response.choices[0].message.content.strip()
-        cleaned_response = raw_response.replace("\n", "")  # Remove all \n characters
 
-        # Load the cleaned response as JSON
-        response_json = json.loads(cleaned_response)
+        try:
+            # Try to parse the raw response directly
+            response_json = json.loads(raw_response)
+        except json.JSONDecodeError as e:
+            print(f"JSON parsing error: {e}. Attempting to clean response...")
+            # Attempt to clean the response and parse again
+            cleaned_response = raw_response.replace("\n", "")
+            try:
+                response_json = json.loads(cleaned_response)
+            except json.JSONDecodeError as e2:
+                print(f"Failed to parse cleaned response: {e2}")
+            raise HTTPException(status_code=500, detail="Failed to parse GPT response.")
+
         candidates = response_json.get("candidatos", [])
 
-        print('candidates')
-        print(candidates)
 
+        # Update VitaeOffer records based on GPT analysis
         for idx, (cvitae, candidate_data) in enumerate(zip(cvitae_records, candidates)):
             try:
                 # Populate CVitae fields with extracted data
@@ -279,32 +309,34 @@ def process_batch(
                 cvitae.candidate_phone = candidate_data.get("movil")
                 cvitae.candidate_mail = candidate_data.get("correo")
 
-                # Update VitaeOffer status based on GPT response
+                # Update VitaeOffer status
                 vitae_offer = db.query(VitaeOffer).filter(VitaeOffer.cvitaeId == cvitae.Id, VitaeOffer.offerId == offerId).first()
-                vitae_offer.ai_response = json.dumps(candidate_data)
-                vitae_offer.response_score = candidate_data.get("score")
                 vitae_offer.status = "pending"
 
+                vitae_offer.ai_response = json.dumps(candidate_data)
+                vitae_offer.response_score = candidate_data.get("score")
+
             except (json.JSONDecodeError, KeyError) as e:
-                # Handle JSON parsing or missing key issues
+                # Handle errors and mark VitaeOffer record as "error"
                 vitae_offer = db.query(VitaeOffer).filter(VitaeOffer.cvitaeId == cvitae.Id, VitaeOffer.offerId == offerId).first()
                 vitae_offer.ai_response = "Parsing error"
-                vitae_offer.status = "error"
+                vitae_offer.status = "error_processing"
                 print(f"Error parsing candidate {idx + 1}: {e}")
 
-        db.commit()  # Commit the transaction after processing each batch
+        db.commit()  # Commit all updates to VitaeOffer records
 
     except Exception as e:
-        # Rollback for unexpected errors
+        # Rollback and mark all related VitaeOffer records as "error_processing"
         db.rollback()
-        # Update VitaeOffer records to 'error' if a global issue occurs
+        print(f"Error analyzing and updating VitaeOffer records: {str(e)}")
+
         for cvitae in cvitae_records:
             vitae_offer = db.query(VitaeOffer).filter(VitaeOffer.cvitaeId == cvitae.Id, VitaeOffer.offerId == offerId).first()
-            if vitae_offer:  # Check if vitae_offer is not None
-                if vitae_offer.status == "pending":  # Update only pending statuses
-                    vitae_offer.status = "rejected"
-            db.commit()
-        raise HTTPException(status_code=500, detail=f"Error processing batch: {str(e)}")
+            if vitae_offer and vitae_offer.status not in ["rejected", "pending"]:
+                vitae_offer.status = "error_processing"
+
+        db.commit()
+        raise HTTPException(status_code=500, detail="An error occurred during the analysis and update process.")
 
 
 def fetch_background_check_result(job_id: str, cvitae_id: int, db: Session, retry_interval: int = 10, max_retries: int = 10):
