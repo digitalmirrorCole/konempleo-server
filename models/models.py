@@ -1,4 +1,4 @@
-from sqlalchemy import TIMESTAMP, Boolean, Column, Enum, Float, ForeignKey, Integer, String, Text, func, text
+from sqlalchemy import TIMESTAMP, Boolean, Column, Date, Enum, Float, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.orm import relationship
 from enum import IntEnum
 
@@ -100,6 +100,7 @@ class CVitae(Base):
     background_check = Column(String)
     tusdatos_id = Column(String)
     companyId = Column(Integer, ForeignKey('company.id'), nullable=False)
+    background_date = Column(Date, nullable=True)
 
     vitae_company = relationship('Company', back_populates='company_cvs')
     Vitae_offers = relationship('VitaeOffer', back_populates='cvitae')
