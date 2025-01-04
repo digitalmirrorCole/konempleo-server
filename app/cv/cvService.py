@@ -16,7 +16,6 @@ import boto3
 import fitz
 import requests
 from requests.auth import HTTPBasicAuth
-from main import logger
 
 from models.models import CVitae, VitaeOffer 
 
@@ -24,15 +23,6 @@ from models.models import CVitae, VitaeOffer
 
 # AWS S3 Bucket name
 BUCKET_NAME = "your_s3_bucket_name"
-
-openai.api_key =  os.getenv("OPENAI_API_KEY", "")
-
-# Check if OpenAI API key is set
-if not openai.api_key:
-    logger.error("OpenAI API key is not set or is empty.")
-else:
-    logger.info(f"Loaded OpenAI API key: {openai.api_key[:5]}...")
-
 
 s3_client = boto3.client(
     's3',
@@ -276,8 +266,6 @@ def analyze_and_update_vitae_offers(
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": full_prompt}
         ]
-        logger.info(f"Before use Loaded OpenAI API key: {openai.api_key[:5]}...")
-        logger.info(f"Before use Loaded OpenAI API key: {openai.api_key}...")
         # Make the OpenAI request
         response = openai.chat.completions.create(
             model="gpt-3.5-turbo-16k",

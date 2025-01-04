@@ -1,6 +1,9 @@
+import os
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import logging
+
+import openai
 
 from app.company.companyController import companyRouter
 from app.user.userController import userRouter
@@ -29,6 +32,15 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+openai.api_key =  os.getenv("OPENAI_API_KEY")
+
+# Check if OpenAI API key is set
+if not openai.api_key:
+    logger.error("OpenAI API key is not set or is empty.")
+else:
+    logger.info(f"Loaded OpenAI API key: {openai.api_key[:5]}...")
+    logger.info(f"Loaded OpenAI API key: {openai.api_key}...")
 
 app = FastAPI(
     title='DeepTalent API',
