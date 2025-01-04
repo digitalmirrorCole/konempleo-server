@@ -26,8 +26,12 @@ from models.models import CVitae, VitaeOffer
 # AWS S3 Bucket name
 BUCKET_NAME = "your_s3_bucket_name"
 
-# Initialize EasyOCR reader once to avoid redundant instantiation
 openai.api_key =  os.getenv("OPENAI_API_KEY", "")
+
+if not openai.api_key:
+    print("OpenAI API key is not set or is empty.")
+else:
+    print(f"Loaded OpenAI API key: {openai.api_key[:5]}...")
 
 s3_client = boto3.client(
     's3',
@@ -271,7 +275,8 @@ def analyze_and_update_vitae_offers(
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": full_prompt}
         ]
-
+        print('before use')
+        print(f"Loaded OpenAI API key: {openai.api_key[:5]}...")
         # Make the OpenAI request
         response = openai.chat.completions.create(
             model="gpt-3.5-turbo-16k",
