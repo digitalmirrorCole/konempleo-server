@@ -266,7 +266,7 @@ def analyze_and_update_vitae_offers(
         {cv_texts}
             """
 
-        # Create OpenAI chat messages
+         # Create OpenAI chat messages
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": full_prompt}
@@ -281,61 +281,48 @@ def analyze_and_update_vitae_offers(
 
         # Process the GPT response
         raw_response = response.choices[0].message.content.strip()
-
         try:
-            # Try to parse the raw response directly
             response_json = json.loads(raw_response)
         except json.JSONDecodeError as e:
-            print(f"JSON parsing error: {e}. Attempting to clean response...")
-            # Attempt to clean the response and parse again
-            cleaned_response = raw_response.replace("\n", "")
-            try:
-                response_json = json.loads(cleaned_response)
-            except json.JSONDecodeError as e2:
-                print(f"Failed to parse cleaned response: {e2}")
+            print(f"JSON parsing error: {e}")
             raise HTTPException(status_code=500, detail="Failed to parse GPT response.")
 
         candidates = response_json.get("candidatos", [])
 
-
-        # Update VitaeOffer records based on GPT analysis
+        # Validate extracted candidates
+        valid_cvitae = []
         for idx, (cvitae, candidate_data) in enumerate(zip(cvitae_records, candidates)):
-            try:
-                # Populate CVitae fields with extracted data
-                cvitae.candidate_name = candidate_data.get("nombre")
-                cvitae.candidate_dni = candidate_data.get("cedula")
-                cvitae.candidate_dni_type = candidate_data.get("tipo_documento")
-                cvitae.candidate_city = candidate_data.get("ciudad")
-                cvitae.candidate_phone = candidate_data.get("movil")
-                cvitae.candidate_mail = candidate_data.get("correo")
+            if not candidate_data.get("nombre") or not candidate_data.get("correo"):
+                print(f"Invalid data for CVitae ID {cvitae.Id}: Missing name or email.")
+                continue  # Skip invalid records
+            
+            # Populate CVitae fields
+            cvitae.candidate_name = candidate_data.get("nombre")
+            cvitae.candidate_mail = candidate_data.get("correo")
+            cvitae.candidate_dni = candidate_data.get("cedula")
+            cvitae.candidate_dni_type = candidate_data.get("tipo_documento")
+            cvitae.candidate_city = candidate_data.get("ciudad")
+            cvitae.candidate_phone = candidate_data.get("movil")
 
-                # Update VitaeOffer status
-                vitae_offer = db.query(VitaeOffer).filter(VitaeOffer.cvitaeId == cvitae.Id, VitaeOffer.offerId == offerId).first()
-                vitae_offer.status = "pending"
+            # Update VitaeOffer record
+            vitae_offer = db.query(VitaeOffer).filter(VitaeOffer.cvitaeId == cvitae.Id, VitaeOffer.offerId == offerId).first()
+            vitae_offer.status = "pending"
+            vitae_offer.ai_response = json.dumps(candidate_data)
+            vitae_offer.response_score = candidate_data.get("score")
 
-                vitae_offer.ai_response = json.dumps(candidate_data)
-                vitae_offer.response_score = candidate_data.get("score")
+            valid_cvitae.append(cvitae)
 
-            except (json.JSONDecodeError, KeyError) as e:
-                # Handle errors and mark VitaeOffer record as "error"
-                vitae_offer = db.query(VitaeOffer).filter(VitaeOffer.cvitaeId == cvitae.Id, VitaeOffer.offerId == offerId).first()
-                vitae_offer.ai_response = "Parsing error"
-                vitae_offer.status = "error_processing"
-                print(f"Error parsing candidate {idx + 1}: {e}")
+        # Remove invalid CVitae and VitaeOffer records
+        for cvitae in cvitae_records:
+            if cvitae not in valid_cvitae:
+                db.query(VitaeOffer).filter(VitaeOffer.cvitaeId == cvitae.Id).delete()
+                db.delete(cvitae)
 
-        db.commit()  # Commit all updates to VitaeOffer records
+        db.commit()  # Commit valid records
 
     except Exception as e:
-        # Rollback and mark all related VitaeOffer records as "error_processing"
         db.rollback()
         print(f"Error analyzing and updating VitaeOffer records: {str(e)}")
-
-        for cvitae in cvitae_records:
-            vitae_offer = db.query(VitaeOffer).filter(VitaeOffer.cvitaeId == cvitae.Id, VitaeOffer.offerId == offerId).first()
-            if vitae_offer and vitae_offer.status not in ["rejected", "pending"]:
-                vitae_offer.status = "error_processing"
-
-        db.commit()
         raise HTTPException(status_code=500, detail="An error occurred during the analysis and update process.")
 
 
