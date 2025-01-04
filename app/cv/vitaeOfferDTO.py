@@ -4,7 +4,7 @@ from typing import Optional
 
 class VitaeOfferResponseDTO(BaseModel):
     vitae_offer_id: int
-    candidate_name: str
+    candidate_name: Optional[str]
     url: Optional[str]
     background_check: Optional[bool]
     background_date: Optional[date] = None
