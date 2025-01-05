@@ -30,6 +30,7 @@ s3_client = boto3.client(
     aws_secret_access_key='your_secret_access_key'
 )
 
+openai.api_key =  os.getenv("OAI_KEY")
 
 def upload_to_s3(file: UploadFile, filename: str):
     try:
