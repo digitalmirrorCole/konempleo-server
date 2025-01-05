@@ -16,6 +16,10 @@ env:
   RDS_HOST: ${{ vars.RDS_HOST }}
   RDS_PORT: ${{ vars.RDS_PORT }}
   RDS_NAME: ${{ vars.RDS_NAME }}
+  OPENAI_API_KEY: ${{ vars.OAI_KEY }}
+  SDUSERNAME: ${{ vars.SDUSERNAME }}
+  SDPASSWORD: ${{ vars.SDPASSWORD }}
+  SDBASIC_AUTH_TOKEN: ${{ vars.SDBASIC_AUTH_TOKEN }}
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -34,7 +38,6 @@ jobs:
           echo DB_PORT=$RDS_PORT >> app/.env
           echo DB_NAME="$RDS_NAME" >> app/.env
           echo OPENAI_API_KEY=$OAI_KEY >> app/.env
-          echo OPENAI_API_KEY_TEST="$OPEN_KEY" >> app/.env
           echo SDUSERNAME="$SDUSERNAME" >> app/.env
           echo SDPASSWORD="$SDPASSWORD" >> app/.env
           echo SDBASIC_AUTH_TOKEN="$SDBASIC_AUTH_TOKEN" >> app/.env
