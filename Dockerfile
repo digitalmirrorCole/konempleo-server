@@ -4,6 +4,7 @@ WORKDIR /konempleo
 COPY ./requirements.txt /konempleo/requirements.txt
 
 # Install dependencies
+RUN apt-get update && apt-get install -y poppler-utils
 RUN pip install --no-cache-dir -r /konempleo/requirements.txt
 
 # Copy the application code
