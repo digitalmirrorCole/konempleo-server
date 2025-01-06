@@ -19,6 +19,8 @@ from requests.auth import HTTPBasicAuth
 
 from models.models import CVitae, VitaeOffer 
 
+pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+
 # s3_client = boto3.client('s3', aws_access_key_id='your_access_key', aws_secret_access_key='your_secret_key', region_name='your_region')
 
 # AWS S3 Bucket name
