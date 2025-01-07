@@ -44,7 +44,7 @@ jobs:
           echo ACCESS_TOKEN_EXPIRE_MINUTES=1440 >> app/.env
           echo ALGORITHM="HS256" >> app/.env
           echo SECRET_KEY="84f79fbb77410c4ff2df367a03acc88440c8cce2e5a0271394038e35d9095256" >> app/.env
-          echo SDTEMPLATE_ID=4578
+          echo SDTEMPLATE_ID=4578 >> app/.env
           echo tusDatosUser="Yolanda@konempleo.com" >> app/.env
           echo tusDatosSecret="Konempleo2022" >> app/.env
 
