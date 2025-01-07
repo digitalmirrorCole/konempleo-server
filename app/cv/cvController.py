@@ -127,10 +127,20 @@ async def background_check(cvitae_id: int, db: Session = Depends(get_db), backgr
         raise HTTPException(status_code=500, detail=f"Error in external request: {str(e)}")
 
     # Get the jobId from the response
-    response_data = response_post.json()
-    job_id = response_data.get("jobId")
+    try:
+        response_data = response_post.json()
+        job_id = response_data.get("jobId")
+    except ValueError:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Invalid JSON response from service. Sent data: {data_post}, Response content: {response_post.text}"
+        )
+
     if not job_id:
-        raise HTTPException(status_code=500, detail="Job ID not returned from the service")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Job ID not returned from the service. Sent data: {data_post}, Response content: {response_post.text}"
+        )
 
     # Save the jobId and the current date in the CVitae record
     cvitae.tusdatos_id = job_id
