@@ -85,12 +85,21 @@ async def background_check(cvitae_id: int, db: Session = Depends(get_db), backgr
     if not cvitae:
         raise HTTPException(status_code=404, detail="CVitae record not found")
 
+    # Map candidate_dni_type to valid TusDatos types
+    dni_type_mapping = {
+        "Cédula de Ciudadania": "CC",
+        "cedula": "CC",
+        "Cedula de extranjeria": "CE",
+        None: "CC",
+        "": "CC"
+    }
+    dni_type = dni_type_mapping.get(cvitae.candidate_dni_type, "CC")
+
     # Prepare the data for the POST request based on candidate_dni or candidate_name
-    url_post = "https://dash-board.tusdatos.co/api/launch"
-    if cvitae.candidate_dni:
+    if cvitae.candidate_dni and str(cvitae.candidate_dni).strip():
         data_post = {
             "doc": int(cvitae.candidate_dni),
-            "typedoc": cvitae.candidate_dni_type,
+            "typedoc": dni_type,
             "force": True
         }
     else:
@@ -99,10 +108,14 @@ async def background_check(cvitae_id: int, db: Session = Depends(get_db), backgr
             "typedoc": "NOMBRE"
         }
 
-    tusDatosUser= os.getenv("tusDatosUser")
-    tusDatosSecret= os.getenv("tusDatosSecret")
+    tusDatosUser = os.getenv("tusDatosUser")
+    tusDatosSecret = os.getenv("tusDatosSecret")
+
+    if not tusDatosUser or not tusDatosSecret:
+        raise HTTPException(status_code=500, detail="TusDatos credentials are not configured.")
 
     # Make the initial POST request
+    url_post = "https://dash-board.tusdatos.co/api/launch"
     try:
         response_post = requests.post(
             url_post,
@@ -152,7 +165,8 @@ def get_cvoffers_by_offer(
             VitaeOffer.whatsapp_status,
             VitaeOffer.smartdataId,
             VitaeOffer.response_score,
-            VitaeOffer.status
+            VitaeOffer.status,
+            VitaeOffer.comments
         ).join(
             CVitae, CVitae.Id == VitaeOffer.cvitaeId  # Use Id instead of id
         ).filter(
@@ -175,7 +189,8 @@ def get_cvoffers_by_offer(
                 smartdataId=row.smartdataId,
                 whatsapp_status=row.whatsapp_status,
                 response_score=row.response_score,
-                status=row.status
+                status=row.status,
+                comments=row.comments
             )
             for row in results
         ]

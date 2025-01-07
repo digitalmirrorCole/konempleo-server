@@ -14,6 +14,7 @@ class VitaeOfferResponseDTO(BaseModel):
     whatsapp_status: Optional[str]
     response_score: Optional[float]
     status: Optional[str]
+    comments: Optional[str]
 
 class UpdateVitaeOfferStatusDTO(BaseModel):
     status: Optional[str]  # Status is now optional
