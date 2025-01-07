@@ -285,7 +285,12 @@ def send_campaign(
 
         # Get the token
         token = get_token()
-        print(f"+57{campaign_data.candidate_phone}")
+
+        # Validate and format the candidate_phone
+        candidate_phone = campaign_data.candidate_phone.strip()  # Remove whitespace
+        if not candidate_phone.startswith("+57"):
+            candidate_phone = f"+57{candidate_phone}"
+
         # Extract the template ID from the environment
         template_id = os.getenv("SDTEMPLATE_ID")
         if not template_id:
@@ -294,7 +299,7 @@ def send_campaign(
         # Prepare the payload
         payload = {
             "template_id": int(template_id),
-            "receiver": f"+57{campaign_data.candidate_phone}",
+            "receiver": candidate_phone,
             "tags_values": f"{campaign_data.candidate_name},{campaign_data.offer_name},{campaign_data.zone},{campaign_data.salary},{campaign_data.contract}"
         }
 
@@ -310,7 +315,7 @@ def send_campaign(
         # Extract the message_id and update the smartdataId
         message_id = response_data.get("message_id")
         if not message_id:
-            raise HTTPException(status_code=500, detail="Response did not contain a message_id.")
+            raise HTTPException(status_code=500, detail=f"Response did not contain a message_id. Response: {response_data}")
 
         # Update the VitaeOffer record
         vitae_offer.whatsapp_status = "pending_response"
@@ -327,7 +332,9 @@ def send_campaign(
         raise HTTPException(status_code=500, detail=f"Failed to send campaign: {str(e)}")
     except Exception as e:
         db.rollback()
-        print(f"Error: {str(e)}")  # Log the error
+        import traceback
+        traceback_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
+        print(f"Error: {traceback_str}")  # Log the full traceback
         raise HTTPException(status_code=500, detail=f"Failed to update VitaeOffer record: {str(e)}")
 
 @cvRouter.put("/cvoffers/update-response/")
