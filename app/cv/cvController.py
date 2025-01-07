@@ -129,7 +129,7 @@ async def background_check(cvitae_id: int, db: Session = Depends(get_db), backgr
     # Get the jobId from the response
     try:
         response_data = response_post.json()
-        job_id = response_data.get("jobId")
+        job_id = response_data.get("jobid")
     except ValueError:
         raise HTTPException(
             status_code=500,
