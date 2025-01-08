@@ -6,7 +6,7 @@ class VitaeOfferResponseDTO(BaseModel):
     vitae_offer_id: int
     candidate_name: Optional[str]
     url: Optional[str]
-    background_check: Optional[bool]
+    background_check: Optional[str]
     background_date: Optional[date] = None
     candidate_phone: Optional[str]
     candidate_mail: Optional[str]
