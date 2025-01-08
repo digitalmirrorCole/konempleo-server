@@ -98,12 +98,11 @@ def process_batch(
 ):
     try:
         cv_texts = []
-        cvitae_records = []
+        temp_cvitae_records = []
 
-        # Extract text from each CV, upload to S3, and save to DB
+        # Extract text from each CV, upload to S3, and save temporary CVitae records
         for file in batch:
             file_extension = file.filename.split('.')[-1].lower()
-            s3_url = 'textpath'  # Placeholder for actual S3 URL
 
             # Read the file content and reset pointer
             file_content = file.file.read()
@@ -117,34 +116,18 @@ def process_batch(
             else:
                 raise HTTPException(status_code=400, detail=f"Unsupported file format: {file_extension}")
 
-            # s3_url = upload_to_s3(file, f"{companyId}/{offerId}/{file.filename}")
-
-            # Add to text preview
             cv_texts.append(f"### Candidate #{len(cv_texts) + 1} ###\n{cv_text}")
 
-            # Create CVitae record
-            cvitae = CVitae(
-                url=s3_url,
+            # Create a temporary CVitae record
+            temp_cvitae = CVitae(
                 companyId=companyId,
                 extension=file_extension,
-                cvtext=cv_text
+                cvtext=cv_text,
             )
-            db.add(cvitae)
-            db.flush()
-            cvitae_records.append(cvitae)
+            temp_cvitae_records.append(temp_cvitae)
 
-            # Create VitaeOffer record
-            vitae_offer = VitaeOffer(
-                cvitaeId=cvitae.Id,
-                offerId=offerId,
-                status='pending'
-            )
-            db.add(vitae_offer)
-
-        db.commit()  # Commit CVitae and VitaeOffer records to DB
-
-        # Analyze CVs with GPT and update VitaeOffer records
-        analyze_and_update_vitae_offers(cv_texts, skills_list, city_offer, age_offer, genre_offer, experience_offer, db, offerId, cvitae_records)
+        # Analyze CVs with GPT and create final records
+        analyze_and_update_vitae_offers(cv_texts, skills_list, city_offer, age_offer, genre_offer, experience_offer, db, offerId, temp_cvitae_records)
 
     except Exception as e:
         db.rollback()
@@ -264,63 +247,62 @@ def analyze_and_update_vitae_offers(
         {cv_texts}
             """
 
-         # Create OpenAI chat messages
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": full_prompt}
         ]
-        # Make the OpenAI request
         response = openai.chat.completions.create(
             model="gpt-3.5-turbo-16k",
             messages=messages,
             temperature=0
         )
-
-        # Process the GPT response
         raw_response = response.choices[0].message.content.strip()
+
+        # Parse GPT response
         try:
             response_json = json.loads(raw_response)
         except json.JSONDecodeError as e:
-            print(f"JSON parsing error: {e}")
+            print(f"JSON parsing error: {e}, Raw response: {raw_response}")
             raise HTTPException(status_code=500, detail="Failed to parse GPT response.")
 
         candidates = response_json.get("candidatos", [])
-
-        # Validate extracted candidates
         valid_cvitae = []
-        for idx, (cvitae, candidate_data) in enumerate(zip(cvitae_records, candidates)):
+
+        # Process each candidate
+        for idx, (temp_cvitae, candidate_data) in enumerate(zip(cvitae_records, candidates)):
             if not candidate_data.get("nombre") or not candidate_data.get("correo"):
-                print(f"Invalid data for CVitae ID {cvitae.Id}: Missing name or email.")
+                print(f"Skipping CVitae due to missing name or email. Data: {candidate_data}")
                 continue  # Skip invalid records
-            
-            # Populate CVitae fields
-            cvitae.candidate_name = candidate_data.get("nombre")
-            cvitae.candidate_mail = candidate_data.get("correo")
-            cvitae.candidate_dni = candidate_data.get("cedula")
-            cvitae.candidate_dni_type = candidate_data.get("tipo_documento")
-            cvitae.candidate_city = candidate_data.get("ciudad")
-            cvitae.candidate_phone = candidate_data.get("movil")
 
-            # Update VitaeOffer record
-            vitae_offer = db.query(VitaeOffer).filter(VitaeOffer.cvitaeId == cvitae.Id, VitaeOffer.offerId == offerId).first()
-            vitae_offer.status = "pending"
-            vitae_offer.ai_response = json.dumps(candidate_data)
-            vitae_offer.response_score = candidate_data.get("score")
+            # Create CVitae record with valid data
+            temp_cvitae.candidate_name = candidate_data.get("nombre")
+            temp_cvitae.candidate_mail = candidate_data.get("correo")
+            temp_cvitae.candidate_dni = candidate_data.get("cedula")
+            temp_cvitae.candidate_dni_type = candidate_data.get("tipo_documento")
+            temp_cvitae.candidate_city = candidate_data.get("ciudad")
+            temp_cvitae.candidate_phone = candidate_data.get("movil")
 
-            valid_cvitae.append(cvitae)
+            db.add(temp_cvitae)
+            db.flush()  # Save the record to get an ID
 
-        # Remove invalid CVitae and VitaeOffer records
-        for cvitae in cvitae_records:
-            if cvitae not in valid_cvitae:
-                db.query(VitaeOffer).filter(VitaeOffer.cvitaeId == cvitae.Id).delete()
-                db.delete(cvitae)
+            # Create VitaeOffer record
+            vitae_offer = VitaeOffer(
+                cvitaeId=temp_cvitae.Id,
+                offerId=offerId,
+                status="pending",
+                ai_response=json.dumps(candidate_data),
+                response_score=candidate_data.get("score"),
+            )
+            db.add(vitae_offer)
 
-        db.commit()  # Commit valid records
+            valid_cvitae.append(temp_cvitae)
+
+        db.commit()
 
     except Exception as e:
         db.rollback()
-        print(f"Error analyzing and updating VitaeOffer records: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred during the analysis and update process.")
+        print(f"Error analyzing and creating CVitae/VitaeOffer records: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while analyzing and creating records.")
 
 
 def fetch_background_check_result(job_id: str, cvitae_id: int, db: Session, retry_interval: int = 10, max_retries: int = 10):
