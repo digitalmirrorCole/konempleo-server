@@ -327,18 +327,10 @@ def fetch_background_check_result(job_id: str, cvitae_id: int, db: Session, retr
     """
     Background task to fetch the background check result every `retry_interval` seconds
     until a status different from "procesando" is returned or the `max_retries` is reached.
-    Saves the result after every retry attempt.
     """
-    # Fetch the CVitae record by ID
-    cvitae = db.query(CVitae).filter(CVitae.Id == cvitae_id).first()
-    if not cvitae:
-        print(f"CVitae record with ID {cvitae_id} not found")
-        return
-
     url_get = f"https://dash-board.tusdatos.co/api/results/{job_id}"
-
-    tusDatosUser= os.getenv("tusDatosUser")
-    tusDatosSecret= os.getenv("tusDatosSecret")
+    tusDatosUser = os.getenv("tusDatosUser")
+    tusDatosSecret = os.getenv("tusDatosSecret")
     
     for attempt in range(max_retries):
         try:
@@ -350,27 +342,26 @@ def fetch_background_check_result(job_id: str, cvitae_id: int, db: Session, retr
             print(f"Error fetching result for job ID {job_id}: {str(e)}")
             return
 
-        # Extract relevant fields from the response
         status = result_data.get("estado")
-        hallazgo = result_data.get("hallazgo")  # Findings from the response
-        
-        # Save the result, regardless of whether the status is "procesando"
-        cvitae.background_check = f"{hallazgo}"
-        cvitae.background_date = datetime.utcnow()  # Update the timestamp for when the background check is saved
-        db.commit()
-        
-        print(f"Attempt {attempt + 1}: Saved status and findings for CVitae ID {cvitae_id}. Status: {status}")
+        hallazgo = result_data.get("hallazgo")
 
-        # If the status is no longer "procesando", exit the loop and stop retrying
+        # Use a new session for each update
+        with db.begin():  # Ensure each operation uses a new transaction
+            cvitae = db.query(CVitae).filter(CVitae.Id == cvitae_id).first()
+            if cvitae:
+                cvitae.background_check = hallazgo or "No findings"
+                cvitae.background_date = datetime.utcnow()
+
+        print(f"Attempt {attempt + 1}: Saved status for CVitae ID {cvitae_id}. Status: {status}")
+
         if status != "procesando":
             print(f"Background check completed for CVitae ID {cvitae_id}. Final Status: {status}")
-            return  # Exit after saving the final result
+            return
 
-        # Wait before the next attempt if status is still "procesando"
         time.sleep(retry_interval)
 
-    # If max retries are reached and status is still "procesando"
     print(f"Max retries reached. Background check for job ID {job_id} is still processing after {max_retries} attempts.")
+
 
 
 # Cache to store tokens and expiration times

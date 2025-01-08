@@ -164,7 +164,6 @@ def get_cvoffers_by_offer(
     Get all VitaeOffer records for a given offer ID with details from CVitae and VitaeOffer tables.
     """
     try:
-        # Query to get the VitaeOffer records for the given offer ID
         results = db.query(
             VitaeOffer.id.label("vitae_offer_id"),
             CVitae.candidate_name,
@@ -178,22 +177,19 @@ def get_cvoffers_by_offer(
             VitaeOffer.status,
             VitaeOffer.comments
         ).join(
-            CVitae, CVitae.Id == VitaeOffer.cvitaeId  # Use Id instead of id
+            CVitae, CVitae.Id == VitaeOffer.cvitaeId
         ).filter(
             VitaeOffer.offerId == offer_id
         ).all()
 
-        # If no results, return an empty array
         if not results:
             return []
 
-        # Format the response
         response = [
             VitaeOfferResponseDTO(
                 vitae_offer_id=row.vitae_offer_id,
                 candidate_name=row.candidate_name,
                 url=row.url,
-                background_check=row.background_check,
                 candidate_phone=row.candidate_phone,
                 candidate_mail=row.candidate_mail,
                 smartdataId=row.smartdataId,
@@ -209,7 +205,8 @@ def get_cvoffers_by_offer(
 
     except Exception as e:
         print(f"Error fetching CV offers for offer ID {offer_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="An error occurred while fetching CV offers.")
+        raise HTTPException(status_code=500, detail=f"An error occurred while fetching CV offers: {str(e)}")
+
 
 @cvRouter.put("/cvoffers/{vitae_offer_id}/status", status_code=200)
 def update_vitae_offer_status(
