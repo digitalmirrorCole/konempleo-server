@@ -189,6 +189,7 @@ def get_cvoffers_by_offer(
             VitaeOfferResponseDTO(
                 vitae_offer_id=row.vitae_offer_id,
                 candidate_name=row.candidate_name,
+                background_check = row.background_check,
                 url=row.url,
                 candidate_phone=row.candidate_phone,
                 candidate_mail=row.candidate_mail,
