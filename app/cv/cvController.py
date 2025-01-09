@@ -95,10 +95,15 @@ async def background_check(cvitae_id: int, db: Session = Depends(get_db), backgr
     }
     dni_type = dni_type_mapping.get(cvitae.candidate_dni_type, "CC")
 
+    # Sanitize the candidate_dni to remove dots, dashes, and spaces
+    sanitized_dni = (
+        "".join(filter(str.isdigit, str(cvitae.candidate_dni))) if cvitae.candidate_dni else None
+    )
+
     # Prepare the data for the POST request based on candidate_dni or candidate_name
-    if cvitae.candidate_dni and str(cvitae.candidate_dni).strip():
+    if sanitized_dni:
         data_post = {
-            "doc": int(cvitae.candidate_dni),
+            "doc": int(sanitized_dni),
             "typedoc": dni_type,
             "force": True
         }
