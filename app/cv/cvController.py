@@ -298,8 +298,7 @@ def send_campaign(
         payload = {
             "template_id": int(template_id),
             "receiver": candidate_phone,
-            "tags_values": f"{campaign_data.candidate_name},{campaign_data.offer_name},{campaign_data.zone},{campaign_data.salary},{campaign_data.contract},
-            {campaign_data.offerId}"
+            "tags_values": f"{campaign_data.candidate_name},{campaign_data.offer_name},{campaign_data.zone},{campaign_data.salary},{campaign_data.contract},{campaign_data.offerId}"
         }
 
         # Make the POST request
