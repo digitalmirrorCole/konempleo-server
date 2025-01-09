@@ -308,7 +308,7 @@ def analyze_and_update_vitae_offers(
 def fetch_background_check_result(job_id: str, cvitae_id: int, db: Session, retry_interval: int = 10, max_retries: int = 10):
     """
     Background task to fetch the background check result every `retry_interval` seconds
-    until a status different from "procesando" is returned or the `max_retries` is reached.
+    until a definitive status is returned or the `max_retries` is reached.
     """
     url_get = f"https://dash-board.tusdatos.co/api/results/{job_id}"
     tusDatosUser = os.getenv("tusDatosUser")
@@ -325,24 +325,46 @@ def fetch_background_check_result(job_id: str, cvitae_id: int, db: Session, retr
             return
 
         status = result_data.get("estado")
-        hallazgo = result_data.get("hallazgo")
+        hallazgo = result_data.get("hallazgo")  # Should be true or false from service
 
         # Use a new session for each update
         with db.begin():  # Ensure each operation uses a new transaction
             cvitae = db.query(CVitae).filter(CVitae.Id == cvitae_id).first()
             if cvitae:
-                cvitae.background_check = hallazgo or "No findings"
-                cvitae.background_date = datetime.utcnow()
+                # Update background_check only if hallazgo is not None
+                if hallazgo is not None:
+                    cvitae.background_check = str(hallazgo).lower()  # Save "true" or "false"
+                    cvitae.background_date = datetime.utcnow()
+                    print(f"Background check completed for CVitae ID {cvitae_id}. Final Status: {status}, Hallazgo: {hallazgo}")
+                    return  # Stop retrying after getting a definitive result
+                elif status == "procesando":
+                    # Temporary status for "procesando"
+                    cvitae.background_check = "No findings"
+                    cvitae.background_date = datetime.utcnow()
+                else:
+                    # Handle unexpected states where hallazgo is None, and status is final
+                    cvitae.background_check = "Error in results"
+                    cvitae.background_date = datetime.utcnow()
+                    print(f"Unexpected state for CVitae ID {cvitae_id}. Status: {status}, Hallazgo: {hallazgo}")
+                    return
 
-        print(f"Attempt {attempt + 1}: Saved status for CVitae ID {cvitae_id}. Status: {status}")
+        print(f"Attempt {attempt + 1}: Status for CVitae ID {cvitae_id}: {status}, Hallazgo: {hallazgo}")
 
+        # If the status is not "procesando", stop retrying even if hallazgo is None
         if status != "procesando":
-            print(f"Background check completed for CVitae ID {cvitae_id}. Final Status: {status}")
+            print(f"Final status reached for CVitae ID {cvitae_id} but no definitive hallazgo. Status: {status}")
             return
 
         time.sleep(retry_interval)
 
-    print(f"Max retries reached. Background check for job ID {job_id} is still processing after {max_retries} attempts.")
+    # If max retries are reached
+    print(f"Max retries reached for job ID {job_id}. Status for CVitae ID {cvitae_id} remains incomplete.")
+    with db.begin():
+        cvitae = db.query(CVitae).filter(CVitae.Id == cvitae_id).first()
+        if cvitae:
+            cvitae.background_check = "Max retries reached"
+            cvitae.background_date = datetime.utcnow()
+
 
 
 
