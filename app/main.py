@@ -1,9 +1,7 @@
-import os
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import logging
-
-import openai
+import yappi
 
 from app.company.companyController import companyRouter
 from app.user.userController import userRouter
@@ -74,12 +72,6 @@ app.include_router(cargoRouter)
 app.include_router(skillRouter)
 app.include_router(healthRouter)
 
-
-import yappi
-from fastapi import FastAPI
-import atexit
-
-app = FastAPI()
 
 # Start profiling when the application starts
 @app.on_event("startup")
