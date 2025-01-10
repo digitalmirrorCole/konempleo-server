@@ -73,3 +73,36 @@ app.include_router(cvRouter)
 app.include_router(cargoRouter)
 app.include_router(skillRouter)
 app.include_router(healthRouter)
+
+
+import yappi
+from fastapi import FastAPI
+import atexit
+
+app = FastAPI()
+
+# Start profiling when the application starts
+@app.on_event("startup")
+async def start_profiling():
+    print("Starting Yappi profiling...")
+    yappi.set_clock_type("wall")  # Options: 'wall', 'cpu'
+    yappi.start()
+
+# Stop profiling and save data when the application stops
+@app.on_event("shutdown")
+async def stop_profiling():
+    print("Stopping Yappi profiling...")
+    yappi.stop()
+    save_yappi_profile("profiling_data.prof")
+
+def save_yappi_profile(file_name: str):
+    # Save profiling results to a .prof file
+    yappi.get_func_stats().save(file_name, type="pstat")
+    print(f"Yappi profiling data saved to {file_name}")
+
+# Optional: Expose an endpoint to download profiling data
+@app.get("/download-profile")
+async def download_profile():
+    yappi.stop()
+    save_yappi_profile("profiling_data.prof")
+    return {"message": "Profiling data saved to profiling_data.prof"}
