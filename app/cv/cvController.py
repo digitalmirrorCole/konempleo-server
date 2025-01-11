@@ -29,17 +29,23 @@ async def upload_cvs(
     Asynchronous endpoint to process and upload CVs for a given offer and company.
     """
 
-    company = db.query(Company).filter(Company.id == companyId).first()
+    # Check if the offer exists and is active
     offer = db.query(Offer).filter(Offer.id == offerId).first()
+    if not offer or not offer.active:
+        raise HTTPException(status_code=404, detail="Offer not found or is inactive")
 
-    if not company or not offer:
-        raise HTTPException(status_code=404, detail="Company or Offer not found")
+    # Check if the company exists
+    company = db.query(Company).filter(Company.id == companyId).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
 
+    # Check if the offer has associated skills
     offer_skills = db.query(Skill).join(OfferSkill).filter(OfferSkill.offerId == offerId).all()
     if not offer_skills:
         raise HTTPException(status_code=404, detail="No skills found for the given offer.")
     skills_list = [skill.name for skill in offer_skills]
 
+    # Extract offer details
     city_offer = offer.city
     age_offer = offer.age
     genre_offer = offer.gender
