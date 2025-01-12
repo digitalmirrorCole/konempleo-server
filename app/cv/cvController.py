@@ -7,8 +7,8 @@ from requests import Session
 
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_user_current
-from app.cv.cvService import fetch_background_check_result, get_token, process_batch
-from app.cv.vitaeOfferDTO import CampaignRequestDTO, UpdateVitaeOfferStatusDTO, VitaeOfferResponseDTO
+from app.cv.cvService import fetch_background_check_result, get_token, process_batch, process_existing_vitae_records
+from app.cv.vitaeOfferDTO import CVitaeResponseDTO, CampaignRequestDTO, UpdateVitaeOfferStatusDTO, VitaeOfferResponseDTO
 from app.deps import get_db
 from models.models import Company, Offer, CVitae, OfferSkill, Skill, UserEnum, VitaeOffer
 import requests
@@ -23,12 +23,15 @@ async def upload_cvs(
     companyId: int,
     offerId: int,
     files: List[UploadFile] = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    userToken: UserToken = Depends(get_user_current)
 ):
     """
     Asynchronous endpoint to process and upload CVs for a given offer and company.
     """
 
+    if userToken.role not in [UserEnum.super_admin, UserEnum.company, UserEnum.company_recruit, UserEnum.admin]:
+            raise HTTPException(status_code=403, detail="You do not have permission to access this endpoint.")
     # Check if the offer exists and is active
     offer = db.query(Offer).filter(Offer.id == offerId).first()
     if not offer or not offer.active:
@@ -38,6 +41,7 @@ async def upload_cvs(
     company = db.query(Company).filter(Company.id == companyId).first()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
+    company_name = company.name.replace(" ", "_").lower()  # Normalize the company name for S3 path
 
     # Check if the offer has associated skills
     offer_skills = db.query(Skill).join(OfferSkill).filter(OfferSkill.offerId == offerId).all()
@@ -65,6 +69,7 @@ async def upload_cvs(
                 process_batch,
                 batch,
                 companyId,
+                company_name,  # Pass the company name
                 offerId,
                 skills_list,
                 city_offer,
@@ -82,10 +87,12 @@ async def upload_cvs(
 
 
 @cvRouter.get("/background-check/{cvitae_id}")
-async def background_check(cvitae_id: int, db: Session = Depends(get_db), background_tasks: BackgroundTasks = BackgroundTasks()):
+async def background_check(cvitae_id: int, db: Session = Depends(get_db), userToken: UserToken = Depends(get_user_current), background_tasks: BackgroundTasks = BackgroundTasks()):
     """
     Perform a background check for a CVitae record using TusDatos API.
     """
+    if userToken.role not in [UserEnum.super_admin, UserEnum.company, UserEnum.company_recruit, UserEnum.admin]:
+            raise HTTPException(status_code=403, detail="You do not have permission to access this endpoint.")
     # Fetch the CVitae record by ID
     cvitae = db.query(CVitae).filter(CVitae.Id == cvitae_id).first()
     if not cvitae:
@@ -175,6 +182,10 @@ def get_cvoffers_by_offer(
     Get all VitaeOffer records for a given offer ID with details from CVitae and VitaeOffer tables.
     """
     try:
+
+        if userToken.role not in [UserEnum.super_admin, UserEnum.company, UserEnum.company_recruit, UserEnum.admin]:
+            raise HTTPException(status_code=403, detail="You do not have permission to access this endpoint.")
+    
         results = db.query(
             VitaeOffer.id.label("vitae_offer_id"),
             CVitae.candidate_name,
@@ -231,6 +242,8 @@ def update_vitae_offer_status(
     Update the status and comments of a VitaeOffer record by its ID.
     """
     try:
+        if userToken.role not in [UserEnum.super_admin, UserEnum.company, UserEnum.company_recruit, UserEnum.admin]:
+            raise HTTPException(status_code=403, detail="You do not have permission to access this endpoint.")
         # Validate the provided status if provided
         allowed_statuses = ['pending', 'hired']
         if status_update.status and status_update.status not in allowed_statuses:
@@ -386,3 +399,77 @@ def update_whatsapp_status(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
+@cvRouter.get("/companies/{company_id}/cvitae", response_model=List[CVitaeResponseDTO])
+def get_cvitae_by_company(
+    company_id: int,
+    db: Session = Depends(get_db),
+    userToken: UserToken = Depends(get_user_current)
+) -> List[CVitaeResponseDTO]:
+    """
+    Retrieve all CVitae records for a given company ID.
+    """
+    # Check if the user has valid permissions
+    if userToken.role not in ["super_admin", "admin", "company", "company_recruit"]:
+        raise HTTPException(status_code=403, detail="You do not have permission to access this resource.")
+
+    # Query CVitae records by company ID
+    cvitae_records = db.query(CVitae).filter(CVitae.companyId == company_id).all()
+
+    if not cvitae_records:
+        raise HTTPException(status_code=404, detail=f"No CVitae records found for company ID {company_id}")
+
+    # Format the response
+    response = [
+        CVitaeResponseDTO(
+            candidate_name=record.candidate_name,
+            url=record.url,
+            candidate_city=record.candidate_city
+        )
+        for record in cvitae_records
+    ]
+
+    return response
+
+@cvRouter.post("/offers/process-existing-cvs/", status_code=200, response_model=None)
+async def process_existing_cvs(
+    offerId: int,
+    cvitae_ids: List[int],
+    db: Session = Depends(get_db),
+    userToken: UserToken = Depends(get_user_current)
+):
+    """
+    Process existing CVitae records by their IDs and create/update associated VitaeOffer records.
+    """
+
+    # Validate user permissions
+    if userToken.role not in [UserEnum.super_admin, UserEnum.company, UserEnum.company_recruit, UserEnum.admin]:
+        raise HTTPException(status_code=403, detail="You do not have permission to access this endpoint.")
+
+    # Check if the offer exists and is active
+    offer = db.query(Offer).filter(Offer.id == offerId).first()
+    if not offer or not offer.active:
+        raise HTTPException(status_code=404, detail="Offer not found or is inactive")
+
+    # Extract skills and offer details
+    offer_skills = db.query(Skill).join(OfferSkill).filter(OfferSkill.offerId == offerId).all()
+    if not offer_skills:
+        raise HTTPException(status_code=404, detail="No skills found for the given offer.")
+    skills_list = [skill.name for skill in offer_skills]
+    city_offer = offer.city
+    age_offer = offer.age
+    genre_offer = offer.gender
+    experience_offer = offer.experience_years
+
+    # Process the CVitae records
+    process_existing_vitae_records(
+        cvitae_ids=cvitae_ids,
+        offerId=offerId,
+        skills_list=skills_list,
+        city_offer=city_offer,
+        age_offer=age_offer,
+        genre_offer=genre_offer,
+        experience_offer=experience_offer,
+        db=db
+    )
+
+    return {"detail": "Processing of existing CVitae records completed successfully."}

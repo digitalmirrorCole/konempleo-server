@@ -5,6 +5,7 @@ import os
 import re
 import time
 from typing import List
+from aiohttp import ClientError
 from docx import Document
 from fastapi import UploadFile, HTTPException
 from openai import OpenAI
@@ -34,13 +35,42 @@ s3_client = boto3.client(
 
 openai.api_key =  os.getenv("OAI_KEY")
 
-def upload_to_s3(file: UploadFile, filename: str):
+def upload_to_s3(file: UploadFile, s3_key: str) -> str:
+    """
+    Upload a file to S3 and return its URL.
+    """
     try:
-        s3_client.upload_fileobj(file.file, BUCKET_NAME, filename)
-        s3_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{filename}"
+        # Reset the file pointer before uploading
+        file.file.seek(0)
+
+        # Upload file to S3
+        s3_client.upload_fileobj(file.file, BUCKET_NAME, s3_key)
+
+        # Construct and return the S3 URL
+        s3_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{s3_key}"
         return s3_url
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload file to S3: {str(e)}")
+
+# Helper function to delete a file from S3
+def delete_from_s3(url: str):
+    """
+    Delete a file from S3 using its URL.
+    """
+    try:
+        # Extract bucket name and key from the URL
+        match = re.match(r"https://(.+?).s3.amazonaws.com/(.+)", url)
+        if not match:
+            print(f"Invalid S3 URL: {url}")
+            return
+        bucket_name, key = match.groups()
+        
+        # Initialize S3 client
+        s3_client = boto3.client('s3')
+        s3_client.delete_object(Bucket=bucket_name, Key=key)
+        print(f"Deleted file from S3: {url}")
+    except ClientError as e:
+        print(f"Failed to delete file from S3: {str(e)}")
 
 
 def extract_text_from_pdf(file_content: bytes) -> str:
@@ -88,6 +118,7 @@ def clean_symbols(text):
 def process_batch(
     batch: List[UploadFile],
     companyId: int,
+    company_name: str,  # Add company_name as a parameter
     offerId: int,
     skills_list: List[str],
     city_offer: str,
@@ -103,6 +134,7 @@ def process_batch(
         # Extract text from each CV, upload to S3, and save temporary CVitae records
         for file in batch:
             file_extension = file.filename.split('.')[-1].lower()
+            file_name = file.filename
 
             # Read the file content and reset pointer
             file_content = file.file.read()
@@ -118,8 +150,13 @@ def process_batch(
 
             cv_texts.append(f"### Candidate #{len(cv_texts) + 1} ###\n{cv_text}")
 
-            # Create a temporary CVitae record
+            # Upload file to S3
+            s3_key = f"{company_name}/cvs/{file_name}"
+            s3_url = upload_to_s3(file, s3_key)
+
+            # Create a temporary CVitae record with the S3 URL
             temp_cvitae = CVitae(
+                url=s3_url,
                 companyId=companyId,
                 extension=file_extension,
                 cvtext=cv_text,
@@ -127,7 +164,9 @@ def process_batch(
             temp_cvitae_records.append(temp_cvitae)
 
         # Analyze CVs with GPT and create final records
-        analyze_and_update_vitae_offers(cv_texts, skills_list, city_offer, age_offer, genre_offer, experience_offer, db, offerId, temp_cvitae_records)
+        analyze_and_update_vitae_offers(
+            cv_texts, skills_list, city_offer, age_offer, genre_offer, experience_offer, db, offerId, temp_cvitae_records
+        )
 
     except Exception as e:
         db.rollback()
@@ -247,6 +286,7 @@ def analyze_and_update_vitae_offers(
         {cv_texts}
             """
 
+        # Send the request to GPT
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": full_prompt}
@@ -272,6 +312,7 @@ def analyze_and_update_vitae_offers(
         for idx, (temp_cvitae, candidate_data) in enumerate(zip(cvitae_records, candidates)):
             if not candidate_data.get("nombre") or not candidate_data.get("correo"):
                 print(f"Skipping CVitae due to missing name or email. Data: {candidate_data}")
+                delete_from_s3(temp_cvitae.url)  # Delete the file from S3
                 continue  # Skip invalid records
 
             # Create CVitae record with valid data
@@ -300,8 +341,11 @@ def analyze_and_update_vitae_offers(
         db.commit()
 
     except Exception as e:
+        # Rollback changes and delete S3 files for all temporary CVitae records
         db.rollback()
         print(f"Error analyzing and creating CVitae/VitaeOffer records: {str(e)}")
+        for temp_cvitae in cvitae_records:
+            delete_from_s3(temp_cvitae.url)  # Delete the file from S3
         raise HTTPException(status_code=500, detail="An error occurred while analyzing and creating records.")
 
 
@@ -422,3 +466,186 @@ def get_token():
 
     except requests.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve token: {str(e)}")
+
+def process_existing_vitae_records(
+    cvitae_ids: List[int],
+    offerId: int,
+    skills_list: List[str],
+    city_offer: str,
+    age_offer: str,
+    genre_offer: str,
+    experience_offer: int,
+    db: Session
+):
+    """
+    Process existing CVitae records by their IDs and create/update associated VitaeOffer records.
+    This does not delete CVitae records on failure.
+    """
+    try:
+        # Fetch CVitae records
+        cvitae_records = db.query(CVitae).filter(CVitae.Id.in_(cvitae_ids)).all()
+        if not cvitae_records or len(cvitae_records) != len(cvitae_ids):
+            raise HTTPException(status_code=404, detail="One or more CVitae records not found.")
+
+        # Prepare cv_texts for GPT processing
+        cv_texts = [cv.cvtext for cv in cvitae_records]
+
+        # Prepare the GPT prompt
+        skills_list_str = ", ".join(skills_list)
+        full_prompt = f"""
+        Actúa como un experto en [Reclutamiento, Selección de Personal, Análisis de
+        Hojas de Vida]. El objetivo de este super prompt es evaluar y calificar las hojas de
+        vida de candidatos con base en una serie de criterios predefinidos. El sistema
+        debe identificar las habilidades del candidato y compararlas con las solicitadas,
+        calcular un puntaje general basado en diversos factores (habilidades, experiencia,
+        tiempo promedio en cada cargo, nivel educativo, entre otros), y finalmente
+        entregar un JSON con todos los datos recolectados del candidato.
+
+        Variables Obligatorias:
+        Se deben recibir y validar las siguientes variables de la oferta inicial. Si el
+        candidato no cumple con alguna de estas cuatro variables (Ciudad, Edad,
+        Género, Experiencia), será descartado automáticamente y su estado se
+        marcará como “No apto” en el campo Status:
+        1. Ciudad (City): Ciudad requerida para que el candidato sea considerado = {city_offer}
+        2. Edad (Age): Rango de edad requerido para el candidato = {age_offer}
+        3. Género (Genre): Género requerido según los lineamientos de la oferta = {genre_offer}
+        4. Experiencia (Experience): Experiencia laboral mínima requerida (en años) = {experience_offer}
+
+        Comparación de Variables Obligatorias:
+        Estas comparaciones se deben realizar en el siguiente orden:
+        1. Ciudad: Comparar la ciudad de residencia extraída del candidato con
+        la ciudad especificada en la oferta. Si no coinciden, el candidato se marcará como
+        “No apto”.
+        2. Edad: Comparar la edad extraída del candidato con el rango de edad
+        especificado en la oferta. Si no se encuentra dentro del rango, el candidato se
+        marcará como “No apto”.
+        3. Género: Comparar el género del candidato con el género
+        especificado en la oferta. Si no coincide, el candidato se marcará como “No
+        apto”.
+        4. Experiencia: Comparar la experiencia laboral total del candidato con
+        la experiencia mínima requerida en la oferta. Si no cumple con el mínimo
+        requerido, el candidato se marcará como “No apto”.
+
+        Parámetros a Extraer:
+        1. Nombre del candidato: Extrae el nombre completo del candidato
+        desde el campo correspondiente en su hoja de vida.
+        2. Tipo de Documento: Extrae el Tipo de documento del candidato
+        3. Número de identificación (Cédula): Extrae el número de
+        identificación del candidato.
+        4. Ciudad de residencia: Extrae la ciudad donde reside el candidato y
+        compárala con la ciudad requerida en la oferta.
+        5. Edad: Extrae la edad del candidato y verifica que esté dentro del
+        rango de edad especificado en la oferta.
+        6. Género: Extrae el género del candidato y verifica que coincida con el
+        género especificado en la oferta.
+        7. Experiencia laboral: Extrae los años de experiencia del candidato y
+        verifica si cumple con la experiencia mínima requerida en la oferta.
+        8. Habilidades encontradas vs Habilidades solicitadas: Compara las
+        habilidades descritas en la hoja de vida del candidato con las habilidades
+        solicitadas en la plataforma y genera una lista de coincidencias.
+        9. Móvil (Teléfono de contacto): Extrae el número móvil del candidato.
+        10. Correo electrónico: Extrae el correo electrónico del candidato.
+        11. Score: Calcula el puntaje del candidato con base en habilidades,
+            experiencia, tiempo promedio en cada cargo, nivel educativo, género, ciudad de
+            residencia, entre otros factores.
+
+        Ecuación del Score Final:
+        Score HET:
+        - H (Habilidades): Evaluar el grado de coincidencia entre las habilidades requeridas y las habilidades del candidato (escala de 0 a 10).
+        - E (Experiencia): La experiencia laboral total en años del candidato (normalizada a una escala de 0 a 10).
+        - T (Tiempo promedio en cada trabajo): Promedio de duración en meses de cada cargo del candidato (normalizado a una escala de 0 a 10).
+
+        Habilidades Solicitadas:
+        Las habilidades solicitadas en esta oferta son las siguientes: {skills_list_str}
+
+        Ejemplo de JSON con los datos de un candidato:
+        {{
+            "nombre": "Juan Perez",
+            "cedula": "80000000",
+            "tipo_documento": "CC",
+            "ciudad": "Bogota",
+            "habilidades_encontradas": ["Habilidad1", "Habilidad2", "Habilidad3"],
+            "habilidades_solicitadas": ["Habilidad1", "Habilidad2", "Habilidad3"],
+            "genero": "Hombre",
+            "movil": "3105555555",
+            "correo": "juan@gmail.com",
+            "score": 7.8,
+            "experiencia_en_anos": 10,
+            "tiempo_promedio_en_cada_trabajo": 36,
+            "nivel_educativo": "Universitario",
+            "edad": 30,
+            "status": "Apto"
+        }}
+
+        ### Instrucciones:
+        A continuación, se presentan los textos completos de los CVs de los candidatos para evaluar. Por cada CV:
+        1. Evalúa las variables obligatorias (Ciudad, Edad, Género, Experiencia, habilidades).
+        2. **Busca explícitamente palabras o frases en el texto que indiquen habilidades técnicas o blandas.** Comparar estas habilidades extraídas con las habilidades solicitadas y llena los campos "habilidades encontradas" y "habilidades solicitadas".
+        3. Extrae la información relevante (nombre, cédula, ciudad, móvil, correo, etc.) y calcula el score final.
+        4. Devuelve un único JSON que contenga una lista de candidatos con el estado (apto/no apto) y los datos extraídos en el siguiente formato:
+
+
+
+        ### Textos de los CVs para Evaluar:
+        {cv_texts}
+            """
+
+        # Send the request to GPT
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": full_prompt}
+        ]
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo-16k",
+            messages=messages,
+            temperature=0
+        )
+        raw_response = response.choices[0].message.content.strip()
+
+        # Parse GPT response
+        try:
+            response_json = json.loads(raw_response)
+        except json.JSONDecodeError as e:
+            print(f"JSON parsing error: {e}, Raw response: {raw_response}")
+            raise HTTPException(status_code=500, detail="Failed to parse GPT response.")
+
+        candidates = response_json.get("candidatos", [])
+
+        # Process each candidate
+        for idx, (cvitae, candidate_data) in enumerate(zip(cvitae_records, candidates)):
+            if not candidate_data.get("nombre") or not candidate_data.get("correo"):
+                print(f"Skipping CVitae due to missing name or email. Data: {candidate_data}")
+                # Delete any existing VitaeOffer record for this CVitae and offerId
+                db.query(VitaeOffer).filter(
+                    VitaeOffer.cvitaeId == cvitae.Id, VitaeOffer.offerId == offerId
+                ).delete()
+                continue  # Skip invalid records
+
+            # Update/Create VitaeOffer record
+            vitae_offer = db.query(VitaeOffer).filter(
+                VitaeOffer.cvitaeId == cvitae.Id, VitaeOffer.offerId == offerId
+            ).first()
+
+            if vitae_offer:
+                # Update existing VitaeOffer
+                vitae_offer.ai_response = json.dumps(candidate_data)
+                vitae_offer.response_score = candidate_data.get("score")
+                vitae_offer.status = "pending"
+            else:
+                # Create new VitaeOffer
+                vitae_offer = VitaeOffer(
+                    cvitaeId=cvitae.Id,
+                    offerId=offerId,
+                    status="pending",
+                    ai_response=json.dumps(candidate_data),
+                    response_score=candidate_data.get("score"),
+                )
+                db.add(vitae_offer)
+
+        db.commit()
+
+    except Exception as e:
+        # Rollback changes if something goes wrong
+        db.rollback()
+        print(f"Error processing existing CVitae records: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while processing CVitae records.")

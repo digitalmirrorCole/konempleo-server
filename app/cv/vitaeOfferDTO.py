@@ -29,3 +29,11 @@ class CampaignRequestDTO(BaseModel):
     contract: str
     offerId: int
     vitae_offer_id: int 
+
+class CVitaeResponseDTO(BaseModel):
+    candidate_name: str
+    url: str
+    candidate_city: str
+
+    class Config:
+        orm_mode = True
