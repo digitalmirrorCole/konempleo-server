@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from app.auth.authDTO import Token, UpdatePassword
-from app.auth.authService import generate_token, get_password_hash, getUserByEmail, verify_password
+from app.auth.authService import generate_presigned_url, generate_token, get_password_hash, getUserByEmail, verify_password
 from app import deps
 
 
@@ -27,3 +27,11 @@ def change_password(form_data: UpdatePassword, db: Session = Depends(deps.get_db
     db.commit()
 
     return {"msg": "Password changed successfully"}
+
+@authRouter.get("/generate-presigned-url/")
+def get_presigned_url(file_path: str, db: Session = Depends(deps.get_db)):
+    try:
+        url = generate_presigned_url(file_path)
+        return {"url": url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating pre-signed URL: {str(e)}")

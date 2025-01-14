@@ -2,6 +2,8 @@
 from datetime import datetime, timedelta
 import os
 from typing import  Optional
+from aiohttp import ClientError
+import boto3
 from fastapi.encoders import jsonable_encoder
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
@@ -81,3 +83,21 @@ def get_password_hash(password):
     return pwd_context.hash(password)
 
 
+S3_BUCKET_NAME = os.getenv("BUCKET_NAME")
+
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id= os.getenv("AWS_KEY"),
+    aws_secret_access_key=os.getenv("AWS_SECRET_KEY")
+)
+
+def generate_presigned_url(object_key: str, expiration: int = 3600) -> str:
+    try:
+        response = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': S3_BUCKET_NAME, 'Key': object_key},
+            ExpiresIn=expiration
+        )
+        return response
+    except ClientError as e:
+        raise Exception(f"Failed to generate pre-signed URL: {e}")
