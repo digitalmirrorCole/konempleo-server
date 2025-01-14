@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import logging
@@ -37,6 +38,17 @@ app = FastAPI(
     version='0.0.1',
     summary='REST API for deepTalent'
 )
+
+aws_key = os.getenv("AWS_KEY")
+aws_secret_key = os.getenv("AWS_SECRET_KEY")
+bucket_name = os.getenv("BUCKET_NAME")
+
+if not aws_key or not aws_secret_key or not bucket_name:
+    logger.error("AWS credentials or bucket name are missing!")
+else:
+    # Log partial values for debugging
+    logger.info(f"AWS_KEY: {aws_key}***")
+    logger.info(f"AWS_SECRET_KEY: {aws_secret_key}***")
 
 origins = ["*"]
 
