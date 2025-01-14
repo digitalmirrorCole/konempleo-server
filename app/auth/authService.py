@@ -5,7 +5,6 @@ from typing import  Optional
 from aiohttp import ClientError
 import boto3
 from botocore.config import Config
-from fastapi.encoders import jsonable_encoder
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
@@ -98,7 +97,7 @@ def generate_presigned_url(object_key: str, expiration: int = 3600) -> str:
     try:
         response = s3_client.generate_presigned_url(
             'get_object',
-            Params={'Bucket': S3_BUCKET_NAME, 'Key': object_key},
+            Params={'Bucket': S3_BUCKET_NAME, 'Key': object_key, 'ResponseContentDisposition': 'inline'},
             ExpiresIn=expiration
         )
         return response
