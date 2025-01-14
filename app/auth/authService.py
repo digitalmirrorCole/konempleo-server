@@ -4,6 +4,7 @@ import os
 from typing import  Optional
 from aiohttp import ClientError
 import boto3
+from botocore.config import Config
 from fastapi.encoders import jsonable_encoder
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
@@ -88,7 +89,8 @@ S3_BUCKET_NAME = os.getenv("BUCKET_NAME")
 s3_client = boto3.client(
     's3',
     aws_access_key_id= os.getenv("AWS_KEY"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_KEY")
+    aws_secret_access_key=os.getenv("AWS_SECRET_KEY"),
+    config=Config(signature_version='s3v4')
 )
 
 def generate_presigned_url(object_key: str, expiration: int = 3600) -> str:
