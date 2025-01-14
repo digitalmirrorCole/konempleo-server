@@ -1,10 +1,11 @@
 
 import json
+import os
 from typing import List, Optional
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func
 from app.auth.authDTO import UserToken
-from app.auth.authService import get_password_hash, get_user_current
+from app.auth.authService import generate_presigned_url, get_password_hash, get_user_current
 from app.company.companyDTO import Company, CompanyCreate, CompanyInDBBaseWCount, CompanyUpdate, CompanyWCount, CompanyWCountWithRecruiter
 from sqlalchemy.orm import Session
 from app.company.companyService import upload_picture_to_s3
@@ -19,6 +20,7 @@ fields_to_update = [
         "name", "sector", "document", "document_type", "city",
         "employees", "activeoffers", "availableoffers", "totaloffers",
         "is_deleted", "active"]
+S3_BUCKET_NAME = os.getenv("BUCKET_NAME")
 
 @companyRouter.post("/company/", status_code=201, response_model=Company)
 def create_company(
@@ -269,6 +271,12 @@ def get_company(
     # Format the response
     result = []
     for company, cv_count, recruiter_name, recruiter_email in companies_with_recruiter:
+        # Generate a pre-signed URL for the picture
+        presigned_url = None
+        if company.picture:
+            object_key = company.picture.replace(f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/", "")
+            presigned_url = generate_presigned_url(S3_BUCKET_NAME, object_key)
+
         result.append(CompanyWCountWithRecruiter(
             id=company.id,
             name=company.name,
@@ -276,7 +284,7 @@ def get_company(
             document=company.document,
             document_type=company.document_type,
             city=company.city,
-            picture=company.picture,
+            picture=presigned_url,  # Use the pre-signed URL
             activeoffers=company.activeoffers,
             availableoffers=company.availableoffers,
             totaloffers=company.totaloffers,
@@ -367,6 +375,12 @@ def get_all_companies(
     # Combine results into a single entry per company
     result_dict = {}
     for company, cv_count, admin_name, admin_email, recruiter_name, recruiter_email in companies_with_details:
+        # Generate a pre-signed URL for the picture
+        presigned_url = None
+        if company.picture:
+            object_key = company.picture.replace(f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/", "")
+            presigned_url = generate_presigned_url(S3_BUCKET_NAME, object_key)
+
         if company.id not in result_dict:
             result_dict[company.id] = CompanyWCount(
                 id=company.id,
@@ -375,7 +389,7 @@ def get_all_companies(
                 document=company.document,
                 document_type=company.document_type,
                 city=company.city,
-                picture=company.picture,
+                picture=presigned_url,  # Use the pre-signed URL
                 activeoffers=company.activeoffers,
                 availableoffers=company.availableoffers,
                 totaloffers=company.totaloffers,
@@ -476,6 +490,12 @@ def get_company_by_id(
     # Extract company details
     company, cv_count, admin_name, admin_email, recruiter_name, recruiter_email = company_with_details
 
+    # Generate a pre-signed URL for the picture
+    presigned_url = None
+    if company.picture:
+        object_key = company.picture.replace(f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/", "")
+        presigned_url = generate_presigned_url(S3_BUCKET_NAME, object_key)
+
     # Format the response
     return CompanyWCountWithRecruiter(
         id=company.id,
@@ -484,7 +504,7 @@ def get_company_by_id(
         document=company.document,
         document_type=company.document_type,
         city=company.city,
-        picture=company.picture,
+        picture=presigned_url,  # Use the pre-signed URL
         activeoffers=company.activeoffers,
         availableoffers=company.availableoffers,
         totaloffers=company.totaloffers,
