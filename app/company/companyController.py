@@ -12,7 +12,6 @@ from app.company.companyService import upload_picture_to_s3
 from app import deps
 from models.models import CVitae, CompanyUser, UserEnum, Users
 from models.models import Company as CompanyModel
-from sqlalchemy.orm import aliased
 
 companyRouter = APIRouter()
 companyRouter.tags = ['Company']
