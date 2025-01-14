@@ -274,7 +274,7 @@ def get_company(
         presigned_url = None
         if company.picture:
             object_key = company.picture.replace(f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/", "")
-            presigned_url = generate_presigned_url(S3_BUCKET_NAME, object_key)
+            presigned_url = generate_presigned_url(object_key)
 
         result.append(CompanyWCountWithRecruiter(
             id=company.id,
@@ -378,7 +378,7 @@ def get_all_companies(
         presigned_url = None
         if company.picture:
             object_key = company.picture.replace(f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/", "")
-            presigned_url = generate_presigned_url(S3_BUCKET_NAME, object_key)
+            presigned_url = generate_presigned_url(object_key)
 
         if company.id not in result_dict:
             result_dict[company.id] = CompanyWCount(
@@ -493,7 +493,7 @@ def get_company_by_id(
     presigned_url = None
     if company.picture:
         object_key = company.picture.replace(f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/", "")
-        presigned_url = generate_presigned_url(S3_BUCKET_NAME, object_key)
+        presigned_url = generate_presigned_url(object_key)
 
     # Format the response
     return CompanyWCountWithRecruiter(
