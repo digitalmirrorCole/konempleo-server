@@ -409,7 +409,7 @@ def get_cvitae_by_company(
     Retrieve all CVitae records for a given company ID.
     """
     # Check if the user has valid permissions
-    if userToken.role not in ["super_admin", "admin", "company", "company_recruit"]:
+    if userToken.role not in [UserEnum.admin, UserEnum.company, UserEnum.company_recruit, UserEnum.super_admin]:
         raise HTTPException(status_code=403, detail="You do not have permission to access this resource.")
 
     # Query CVitae records by company ID

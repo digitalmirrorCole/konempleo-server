@@ -94,12 +94,35 @@ s3_client = boto3.client(
 )
 
 def generate_presigned_url(object_key: str, expiration: int = 3600) -> str:
+    # Infer the file type from the object key
+    file_extension = object_key.split('.')[-1].lower()
+
+    # Determine appropriate headers based on the file type
+    content_disposition = 'inline'
+    content_type = None  # Default to no explicit content type
+
+    if file_extension == 'pdf':
+        content_type = 'application/pdf'
+    elif file_extension in ['jpg', 'jpeg', 'png', 'gif']:
+        content_type = f'image/{file_extension if file_extension != "jpg" else "jpeg"}'
+
     try:
+        # Set dynamic parameters based on file type
+        params = {
+            'Bucket': S3_BUCKET_NAME,
+            'Key': object_key,
+            'ResponseContentDisposition': content_disposition,
+        }
+        if content_type:
+            params['ResponseContentType'] = content_type
+
+        # Generate the pre-signed URL
         response = s3_client.generate_presigned_url(
             'get_object',
-            Params={'Bucket': S3_BUCKET_NAME, 'Key': object_key, 'ResponseContentDisposition': 'inline'},
+            Params=params,
             ExpiresIn=expiration
         )
         return response
     except ClientError as e:
         raise Exception(f"Failed to generate pre-signed URL: {e}")
+
