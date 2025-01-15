@@ -10,7 +10,7 @@ from app.auth.authService import get_user_current
 from app.cv.cvService import fetch_background_check_result, get_token, process_batch, process_existing_vitae_records
 from app.cv.vitaeOfferDTO import CVitaeResponseDTO, CampaignRequestDTO, UpdateVitaeOfferStatusDTO, VitaeOfferResponseDTO
 from app.deps import get_db
-from models.models import Company, Offer, CVitae, OfferSkill, Skill, UserEnum, VitaeOffer
+from models.models import Cargo, Company, Offer, CVitae, OfferSkill, Skill, UserEnum, VitaeOffer
 import requests
 from requests.auth import HTTPBasicAuth
 from datetime import datetime
@@ -406,7 +406,7 @@ def get_cvitae_by_company(
     userToken: UserToken = Depends(get_user_current)
 ) -> List[CVitaeResponseDTO]:
     """
-    Retrieve all CVitae records for a given company ID.
+    Retrieve all CVitae records for a given company ID along with associated cargo names.
     """
     # Check if the user has valid permissions
     if userToken.role not in [UserEnum.admin, UserEnum.company, UserEnum.company_recruit, UserEnum.super_admin]:
@@ -418,12 +418,32 @@ def get_cvitae_by_company(
     if not cvitae_records:
         raise HTTPException(status_code=404, detail=f"No CVitae records found for company ID {company_id}")
 
+    # Retrieve associated cargo names for each CVitae record
+    cvitae_ids = [record.Id for record in cvitae_records]
+    cargo_names_map = (
+        db.query(VitaeOffer.cvitaeId, Cargo.name)
+        .join(Offer, Offer.id == VitaeOffer.offerId)
+        .join(Cargo, Cargo.id == Offer.cargoId)
+        .filter(VitaeOffer.cvitaeId.in_(cvitae_ids))
+        .distinct()
+        .all()
+    )
+
+    # Map CVitae ID to associated cargo names
+    cvitae_to_cargos = {}
+    for cvitae_id, cargo_name in cargo_names_map:
+        if cvitae_id not in cvitae_to_cargos:
+            cvitae_to_cargos[cvitae_id] = []
+        cvitae_to_cargos[cvitae_id].append(cargo_name)
+
     # Format the response
     response = [
         CVitaeResponseDTO(
+            id=record.Id,  # Include CVitae ID
             candidate_name=record.candidate_name,
             url=record.url,
-            candidate_city=record.candidate_city
+            candidate_city=record.candidate_city,
+            associated_cargos=cvitae_to_cargos.get(record.Id, [])  # Return cargo names or an empty list
         )
         for record in cvitae_records
     ]

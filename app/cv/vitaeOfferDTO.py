@@ -1,6 +1,6 @@
 from datetime import date
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 
 class VitaeOfferResponseDTO(BaseModel):
     vitae_offer_id: int
@@ -31,9 +31,11 @@ class CampaignRequestDTO(BaseModel):
     vitae_offer_id: int 
 
 class CVitaeResponseDTO(BaseModel):
+    id: int
     candidate_name: Optional[str]
     url: Optional[str]
     candidate_city: Optional[str]
+    associated_cargos: List[str]
 
     class Config:
         orm_mode = True
