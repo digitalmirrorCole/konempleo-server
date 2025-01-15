@@ -31,9 +31,9 @@ class CampaignRequestDTO(BaseModel):
     vitae_offer_id: int 
 
 class CVitaeResponseDTO(BaseModel):
-    candidate_name: str
-    url: str
-    candidate_city: str
+    candidate_name: Optional[str]
+    url: Optional[str]
+    candidate_city: Optional[str]
 
     class Config:
         orm_mode = True
