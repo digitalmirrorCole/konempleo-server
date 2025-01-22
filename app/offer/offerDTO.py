@@ -42,8 +42,11 @@ class OfferWithVitaeCount(OfferBase):
 class OfferWithVitaeCount(OfferBase):
     id: int
     vitae_offer_count: int
-    start_date: Optional[datetime] = None  # Added field for created_date
+    start_date: Optional[datetime] = None
     close_date: Optional[datetime] = None
+    background_check_count: int
+    smartdataId_count: int
+
 
 # DTO for updating an Offer
 class OfferUpdateDTO(BaseModel):

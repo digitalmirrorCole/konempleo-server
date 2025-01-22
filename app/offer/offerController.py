@@ -8,7 +8,7 @@ from app.auth.authDTO import UserToken
 from app.auth.authService import get_user_current
 from app.deps import get_db
 from app.offer.offerDTO import Offer, OfferCreateDTO, OfferUpdateDTO, OfferWithVitaeCount
-from models.models import Cargo, Company, CompanyOffer, CompanyUser, OfferSkill, Skill, UserEnum, Users, VitaeOffer
+from models.models import CVitae, Cargo, Company, CompanyOffer, CompanyUser, OfferSkill, Skill, UserEnum, Users, VitaeOffer
 from models.models import Offer as OfferModel
 
 offerRouter = APIRouter()
@@ -170,6 +170,8 @@ def get_offers_by_company(
     """
     Get offers for a given company and count the number of associated VitaeOffer records for each offer.
     Optionally filter by start_date and close_date.
+    Additionally, include counts of CVitae with background_check not null
+    and VitaeOffer with smartdataId not null.
     """
 
     if userToken.role not in [UserEnum.super_admin, UserEnum.admin, UserEnum.company]:
@@ -189,16 +191,20 @@ def get_offers_by_company(
     elif start_date or close_date:
         raise HTTPException(
             status_code=400, detail="Both start_date and close_date must be provided together"
-    )   
+        )
 
-    # Base query
+    # Base query with additional counts for background_check and smartdataId
     query = db.query(
         OfferModel,
-        func.count(VitaeOffer.id).label('vitae_offer_count')
+        func.count(VitaeOffer.id).label('vitae_offer_count'),
+        func.count(func.nullif(CVitae.background_check, None)).label('background_check_count'),
+        func.count(func.nullif(VitaeOffer.smartdataId, None)).label('smartdataId_count')
     ).join(
         CompanyOffer, CompanyOffer.offerId == OfferModel.id
     ).outerjoin(
         VitaeOffer, VitaeOffer.offerId == OfferModel.id
+    ).outerjoin(
+        CVitae, CVitae.Id == VitaeOffer.cvitaeId
     ).filter(
         CompanyOffer.companyId == company_id
     ).group_by(
@@ -215,11 +221,13 @@ def get_offers_by_company(
     # Execute query
     offers_with_vitae_count = query.all()
 
-    # Format the response with the offer data and vitae_offer_count
+    # Format the response with the offer data, vitae_offer_count, background_check_count, and smartdataId_count
     result = []
-    for offer, vitae_offer_count in offers_with_vitae_count:
+    for offer, vitae_offer_count, background_check_count, smartdataId_count in offers_with_vitae_count:
         offer_dict = offer.__dict__.copy()  # Convert the offer object to a dictionary
         offer_dict['vitae_offer_count'] = vitae_offer_count
+        offer_dict['background_check_count'] = background_check_count
+        offer_dict['smartdataId_count'] = smartdataId_count
         offer_dict['start_date'] = offer.created_date  # Add start_date to response
         offer_dict['close_date'] = offer.modified_date  # Add close_date to response
         result.append(OfferWithVitaeCount(**offer_dict))
@@ -236,6 +244,8 @@ def get_offers_by_owner(
     """
     Get offers for a given offer owner and count the number of associated VitaeOffer records for each offer.
     Optionally filter by start_date and close_date.
+    Additionally, include counts of CVitae with background_check not null
+    and VitaeOffer with smartdataId not null.
     """
 
     # Ensure only super_admin or company users can access this
@@ -260,12 +270,16 @@ def get_offers_by_owner(
             status_code=400, detail="Both start_date and close_date must be provided together"
         )
 
-    # Base query
+    # Base query with additional counts for background_check and smartdataId
     query = db.query(
         OfferModel,
-        func.count(VitaeOffer.id).label("vitae_offer_count")
+        func.count(VitaeOffer.id).label("vitae_offer_count"),
+        func.count(func.nullif(CVitae.background_check, None)).label("background_check_count"),
+        func.count(func.nullif(VitaeOffer.smartdataId, None)).label("smartdataId_count")
     ).outerjoin(
         VitaeOffer, VitaeOffer.offerId == OfferModel.id
+    ).outerjoin(
+        CVitae, CVitae.Id == VitaeOffer.cvitaeId
     ).filter(
         OfferModel.offer_owner == current_user_id
     ).group_by(
@@ -282,11 +296,13 @@ def get_offers_by_owner(
     # Execute query
     offers_with_vitae_count = query.all()
 
-    # Format the response with the offer data and vitae_offer_count
+    # Format the response with the offer data, vitae_offer_count, background_check_count, and smartdataId_count
     result = []
-    for offer, vitae_offer_count in offers_with_vitae_count:
+    for offer, vitae_offer_count, background_check_count, smartdataId_count in offers_with_vitae_count:
         offer_dict = offer.__dict__.copy()  # Convert the offer object to a dictionary
         offer_dict["vitae_offer_count"] = vitae_offer_count
+        offer_dict["background_check_count"] = background_check_count
+        offer_dict["smartdataId_count"] = smartdataId_count
         offer_dict["start_date"] = offer.created_date  # Add start_date to response
         offer_dict["close_date"] = offer.modified_date  # Add close_date to response
         result.append(OfferWithVitaeCount(**offer_dict))
