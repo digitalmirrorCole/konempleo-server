@@ -1,6 +1,8 @@
 from typing import Optional
 from pydantic import BaseModel
 from enum import IntEnum
+from datetime import datetime
+
 
 from models.models import contractEnum, shiftEnum, genderEnum, militaryEnum, licenseEnum, educationEnum
 
@@ -36,6 +38,12 @@ class OfferCreateDTO(OfferBase):
 class OfferWithVitaeCount(OfferBase):
     id: int
     vitae_offer_count: int
+
+class OfferWithVitaeCount(OfferBase):
+    id: int
+    vitae_offer_count: int
+    start_date: Optional[datetime] = None  # Added field for created_date
+    close_date: Optional[datetime] = None
 
 # DTO for updating an Offer
 class OfferUpdateDTO(BaseModel):

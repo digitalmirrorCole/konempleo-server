@@ -1,7 +1,7 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor 
 import os
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Body, Depends, File, Query, UploadFile, BackgroundTasks, HTTPException, status
 from requests import Session
 
@@ -175,18 +175,33 @@ async def background_check(cvitae_id: int, db: Session = Depends(get_db), userTo
 @cvRouter.get("/cvoffers/{offer_id}", status_code=200, response_model=List[VitaeOfferResponseDTO])
 def get_cvoffers_by_offer(
     offer_id: int,
+    start_date: Optional[datetime] = None,
+    close_date: Optional[datetime] = None,
     db: Session = Depends(get_db),
-    userToken: UserToken = Depends(get_user_current)
+    userToken: UserToken = Depends(get_user_current),
 ) -> List[VitaeOfferResponseDTO]:
     """
     Get all VitaeOffer records for a given offer ID with details from CVitae and VitaeOffer tables.
+    Optionally filter by start_date and close_date.
     """
     try:
-
+        # Validate user permissions
         if userToken.role not in [UserEnum.super_admin, UserEnum.company, UserEnum.company_recruit, UserEnum.admin]:
             raise HTTPException(status_code=403, detail="You do not have permission to access this endpoint.")
-    
-        results = db.query(
+        
+        # Validate date filters
+        if start_date and close_date:
+            if close_date <= start_date:
+                raise HTTPException(
+                    status_code=400, detail="close_date must be greater than start_date"
+                )
+        elif start_date or close_date:
+            raise HTTPException(
+                status_code=400, detail="Both start_date and close_date must be provided together"
+            )
+
+        # Build base query
+        query = db.query(
             VitaeOffer.id.label("vitae_offer_id"),
             CVitae.candidate_name,
             CVitae.url,
@@ -197,29 +212,44 @@ def get_cvoffers_by_offer(
             VitaeOffer.smartdataId,
             VitaeOffer.response_score,
             VitaeOffer.status,
-            VitaeOffer.comments
+            VitaeOffer.comments,
+            VitaeOffer.created_date,
+            VitaeOffer.modified_date
         ).join(
             CVitae, CVitae.Id == VitaeOffer.cvitaeId
         ).filter(
             VitaeOffer.offerId == offer_id
-        ).all()
+        )
+
+        # Apply date filters if provided
+        if start_date and close_date:
+            query = query.filter(
+                VitaeOffer.created_date >= start_date,
+                VitaeOffer.created_date <= close_date
+            )
+
+        # Execute query
+        results = query.all()
 
         if not results:
             return []
 
+        # Format response
         response = [
             VitaeOfferResponseDTO(
                 vitae_offer_id=row.vitae_offer_id,
                 candidate_name=row.candidate_name,
-                background_check = row.background_check,
                 url=row.url,
+                background_check=row.background_check,
                 candidate_phone=row.candidate_phone,
                 candidate_mail=row.candidate_mail,
                 smartdataId=row.smartdataId,
                 whatsapp_status=row.whatsapp_status,
                 response_score=row.response_score,
                 status=row.status,
-                comments=row.comments
+                comments=row.comments,
+                created_date=row.created_date,
+                modified_date=row.modified_date
             )
             for row in results
         ]

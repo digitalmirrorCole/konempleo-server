@@ -111,15 +111,3 @@ async def download_profile():
     yappi.stop()
     save_yappi_profile("profiling_data.prof")
     return {"message": "Profiling data saved to profiling_data.prof"}
-
-# Endpoint to download the profiling data file
-@app.get("/download-profile-file", response_class=FileResponse)
-async def download_profile_file():
-    file_path = "profiling_data.prof"
-    # yappi.stop()  # Ensure profiling is stopped
-    # save_yappi_profile(file_path)  # Save the profiling data
-    return FileResponse(
-        path=file_path,
-        media_type="application/octet-stream",
-        filename="profiling_data.prof"
-    )

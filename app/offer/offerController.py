@@ -1,4 +1,5 @@
-from typing import List
+from datetime import datetime
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from requests import Session
 from sqlalchemy import func
@@ -159,9 +160,16 @@ def update_offer(
 
 
 @offerRouter.get("/offers/company/details/{company_id}", response_model=List[OfferWithVitaeCount])
-def get_offers_by_company(company_id: int, db: Session = Depends(get_db), userToken: UserToken = Depends(get_user_current)):
+def get_offers_by_company(
+    company_id: int,
+    start_date: Optional[datetime] = None,
+    close_date: Optional[datetime] = None,
+    db: Session = Depends(get_db),
+    userToken: UserToken = Depends(get_user_current),
+):
     """
     Get offers for a given company and count the number of associated VitaeOffer records for each offer.
+    Optionally filter by start_date and close_date.
     """
 
     if userToken.role not in [UserEnum.super_admin, UserEnum.admin, UserEnum.company]:
@@ -172,9 +180,20 @@ def get_offers_by_company(company_id: int, db: Session = Depends(get_db), userTo
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
 
-    # Query offers associated with the company and count associated VitaeOffer records
-    offers_with_vitae_count = db.query(
-        OfferModel, 
+    # Validate start_date and close_date
+    if start_date and close_date:
+        if close_date <= start_date:
+            raise HTTPException(
+                status_code=400, detail="close_date must be greater than start_date"
+            )
+    elif start_date or close_date:
+        raise HTTPException(
+            status_code=400, detail="Both start_date and close_date must be provided together"
+    )   
+
+    # Base query
+    query = db.query(
+        OfferModel,
         func.count(VitaeOffer.id).label('vitae_offer_count')
     ).join(
         CompanyOffer, CompanyOffer.offerId == OfferModel.id
@@ -184,27 +203,45 @@ def get_offers_by_company(company_id: int, db: Session = Depends(get_db), userTo
         CompanyOffer.companyId == company_id
     ).group_by(
         OfferModel.id
-    ).all()
+    )
+
+    # Apply date filters if provided
+    if start_date and close_date:
+        query = query.filter(
+            OfferModel.created_date >= start_date,
+            OfferModel.created_date <= close_date
+        )
+
+    # Execute query
+    offers_with_vitae_count = query.all()
 
     # Format the response with the offer data and vitae_offer_count
     result = []
     for offer, vitae_offer_count in offers_with_vitae_count:
         offer_dict = offer.__dict__.copy()  # Convert the offer object to a dictionary
         offer_dict['vitae_offer_count'] = vitae_offer_count
+        offer_dict['start_date'] = offer.created_date  # Add start_date to response
+        offer_dict['close_date'] = offer.modified_date  # Add close_date to response
         result.append(OfferWithVitaeCount(**offer_dict))
     
     return result
 
 @offerRouter.get("/offers/owner/", response_model=List[OfferWithVitaeCount])
-def get_offers_by_owner(db: Session = Depends(get_db), userToken: UserToken = Depends(get_user_current)):
+def get_offers_by_owner(
+    start_date: Optional[datetime] = None,
+    close_date: Optional[datetime] = None,
+    db: Session = Depends(get_db),
+    userToken: UserToken = Depends(get_user_current),
+):
     """
     Get offers for a given offer owner and count the number of associated VitaeOffer records for each offer.
+    Optionally filter by start_date and close_date.
     """
 
     # Ensure only super_admin or company users can access this
     if userToken.role not in [UserEnum.super_admin, UserEnum.company, UserEnum.company_recruit]:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
-    
+
     current_user_id = userToken.id
 
     # Check if the offer owner exists
@@ -212,25 +249,48 @@ def get_offers_by_owner(db: Session = Depends(get_db), userToken: UserToken = De
     if not owner:
         raise HTTPException(status_code=404, detail="Offer owner not found")
 
-    # Query offers associated with the given offer_owner and count associated VitaeOffer records
-    offers_with_vitae_count = db.query(
-        OfferModel, 
-        func.count(VitaeOffer.id).label('vitae_offer_count')
+    # Validate start_date and close_date
+    if start_date and close_date:
+        if close_date <= start_date:
+            raise HTTPException(
+                status_code=400, detail="close_date must be greater than start_date"
+            )
+    elif start_date or close_date:
+        raise HTTPException(
+            status_code=400, detail="Both start_date and close_date must be provided together"
+        )
+
+    # Base query
+    query = db.query(
+        OfferModel,
+        func.count(VitaeOffer.id).label("vitae_offer_count")
     ).outerjoin(
         VitaeOffer, VitaeOffer.offerId == OfferModel.id
     ).filter(
         OfferModel.offer_owner == current_user_id
     ).group_by(
         OfferModel.id
-    ).all()
+    )
+
+    # Apply date filters if provided
+    if start_date and close_date:
+        query = query.filter(
+            OfferModel.created_date >= start_date,
+            OfferModel.created_date <= close_date
+        )
+
+    # Execute query
+    offers_with_vitae_count = query.all()
 
     # Format the response with the offer data and vitae_offer_count
     result = []
     for offer, vitae_offer_count in offers_with_vitae_count:
         offer_dict = offer.__dict__.copy()  # Convert the offer object to a dictionary
-        offer_dict['vitae_offer_count'] = vitae_offer_count
+        offer_dict["vitae_offer_count"] = vitae_offer_count
+        offer_dict["start_date"] = offer.created_date  # Add start_date to response
+        offer_dict["close_date"] = offer.modified_date  # Add close_date to response
         result.append(OfferWithVitaeCount(**offer_dict))
-    
+
     return result
 
 @offerRouter.get("/offers/details/{offer_id}", response_model=OfferWithVitaeCount)

@@ -1,4 +1,4 @@
-from sqlalchemy import TIMESTAMP, Boolean, Column, Date, Enum, Float, ForeignKey, Integer, String, Text, func, text
+from sqlalchemy import TIMESTAMP, Boolean, Column, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.orm import relationship
 from enum import IntEnum
 
@@ -131,6 +131,8 @@ class Offer(Base):
     assigned_cvs = Column(Integer, server_default=text('0'))
     filter_questions = Column(String)
     active = Column(Boolean, default=True)
+    created_date = Column(DateTime, server_default=func.now(), nullable=False)
+    modified_date = Column(DateTime, onupdate=func.now(), server_default=func.now(), nullable=False)
 
     
     offer_skills = relationship('OfferSkill', back_populates='offer')
@@ -201,6 +203,8 @@ class VitaeOffer(Base):
     whatsapp_status = Column(Enum('notsent', 'pending_response', 'interested', 'not_interested', name='whatsapp_status_enum'))
     smartdataId = Column(String)
     comments = Column(String(160))
+    created_date = Column(DateTime, server_default=func.now(), nullable=False)
+    modified_date = Column(DateTime, onupdate=func.now(), server_default=func.now(), nullable=False)
 
     cvitae = relationship('CVitae', back_populates='Vitae_offers')
     offer = relationship('Offer', back_populates='vitae_offers')

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -10,11 +10,13 @@ class VitaeOfferResponseDTO(BaseModel):
     background_date: Optional[date] = None
     candidate_phone: Optional[str]
     candidate_mail: Optional[str]
-    smartdataId : Optional[str]
+    smartdataId: Optional[str]
     whatsapp_status: Optional[str]
     response_score: Optional[float]
     status: Optional[str]
     comments: Optional[str]
+    created_date: Optional[datetime]
+    modified_date: Optional[datetime]
 
 class UpdateVitaeOfferStatusDTO(BaseModel):
     status: Optional[str]  # Status is now optional
