@@ -401,33 +401,42 @@ def update_whatsapp_status(
     Update the WhatsApp status of a VitaeOffer record based on user response.
     Only accessible to users with the 'integrations' role.
     """
-    # Check if the user has the required role
-    if userToken.role != UserEnum.integrations:
-        raise HTTPException(status_code=403, detail="You do not have permission to access this endpoint.")
-
     try:
+        # Validate the user's role
+        if userToken.role != UserEnum.integrations:
+            raise HTTPException(status_code=403, detail="You do not have permission to access this endpoint.")
+
         # Fetch the VitaeOffer record
         vitae_offer = db.query(VitaeOffer).filter(
             VitaeOffer.smartdataId == smartdataId,
             VitaeOffer.offerId == offerId
         ).first()
 
+        # Check if VitaeOffer exists
         if not vitae_offer:
             raise HTTPException(status_code=404, detail="VitaeOffer record not found.")
 
-        # Update the whatsapp_status based on user response
+        # Validate the user response
         if userResponse not in ["interested", "not_interested"]:
             raise HTTPException(status_code=400, detail="Invalid user response.")
 
+        # Update the WhatsApp status
         vitae_offer.whatsapp_status = userResponse
         db.commit()
         db.refresh(vitae_offer)
 
         return {"detail": f"WhatsApp status updated to '{userResponse}' for VitaeOffer ID {vitae_offer.id}"}
 
+    except HTTPException as http_exc:
+        # Log HTTP exceptions for better context
+        print(f"HTTPException: {http_exc.detail}")
+        raise http_exc
     except Exception as e:
+        # Log and raise unexpected errors
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+        print(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
 
 @cvRouter.get("/companies/{company_id}/cvitae", response_model=List[CVitaeResponseDTO])
 def get_cvitae_by_company(
