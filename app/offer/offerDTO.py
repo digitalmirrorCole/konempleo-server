@@ -46,7 +46,7 @@ class OfferWithVitaeCount(OfferBase):
     close_date: Optional[datetime] = None
     background_check_count: int
     smartdataId_count: int
-
+    interested_count: int
 
 # DTO for updating an Offer
 class OfferUpdateDTO(BaseModel):
