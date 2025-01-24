@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from requests import Session
-from sqlalchemy import func
+from sqlalchemy import case, func
 
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_user_current
@@ -199,7 +199,12 @@ def get_offers_by_company(
         func.count(VitaeOffer.id).label('vitae_offer_count'),
         func.count(func.nullif(CVitae.background_check, None)).label('background_check_count'),
         func.count(func.nullif(VitaeOffer.smartdataId, None)).label('smartdataId_count'),
-        func.count(func.filter(VitaeOffer.whatsapp_status == 'interested', VitaeOffer.id)).label('interested_count')
+        func.count(
+            case(
+                (VitaeOffer.whatsapp_status == 'interested', 1),
+                else_=None
+            )
+        ).label('interested_count')
     ).join(
         CompanyOffer, CompanyOffer.offerId == OfferModel.id
     ).outerjoin(
@@ -278,7 +283,12 @@ def get_offers_by_owner(
         func.count(VitaeOffer.id).label("vitae_offer_count"),
         func.count(func.nullif(CVitae.background_check, None)).label("background_check_count"),
         func.count(func.nullif(VitaeOffer.smartdataId, None)).label("smartdataId_count"),
-        func.count(func.filter(VitaeOffer.whatsapp_status == 'interested', VitaeOffer.id)).label("interested_count")
+        func.count(
+            case(
+                (VitaeOffer.whatsapp_status == 'interested', 1),
+                else_=None
+            )
+        ).label('interested_count')
     ).outerjoin(
         VitaeOffer, VitaeOffer.offerId == OfferModel.id
     ).outerjoin(
