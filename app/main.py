@@ -2,8 +2,9 @@ import os
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import logging
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 import yappi
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.company.companyController import companyRouter
 from app.user.userController import userRouter
@@ -40,18 +41,22 @@ app = FastAPI(
     summary='REST API for deepTalent'
 )
 
-aws_key = os.getenv("AWS_KEY")
-aws_secret_key = os.getenv("AWS_SECRET_KEY")
-bucket_name = os.getenv("BUCKET_NAME")
+class LimitRequestSizeMiddleware(BaseHTTPMiddleware):
+    def _init_(self, app, max_body_size: int):
+        super()._init_(app)
+        self.max_body_size = max_body_size
 
-if not aws_key or not aws_secret_key or not bucket_name:
-    logger.error("AWS credentials or bucket name are missing!")
-else:
-    # Log partial values for debugging
-    logger.info(f"AWS_KEY: {aws_key}***")
-    logger.info(f"AWS_SECRET_KEY: {aws_secret_key}***")
+    async def dispatch(self, request, call_next):
+        # Check if the request body exceeds the limit
+        if request.headers.get("content-length") and int(request.headers["content-length"]) > self.max_body_size:
+            return JSONResponse(
+                {"detail": "Payload too large"}, status_code=413
+            )
+        return await call_next(request)
 
 origins = ["*"]
+
+app.add_middleware(LimitRequestSizeMiddleware, max_body_size=50 * 1024 * 1024)
 
 app.add_middleware(
     CORSMiddleware,
