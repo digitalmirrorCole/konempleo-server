@@ -108,6 +108,15 @@ def save_yappi_profile(file_name: str):
 # Optional: Expose an endpoint to download profiling data
 @app.get("/download-profile")
 async def download_profile():
+    file_name = "profiling_data.prof"
+    
+    # Stop profiling and save the data to a file
     yappi.stop()
-    save_yappi_profile("profiling_data.prof")
-    return {"message": "Profiling data saved to profiling_data.prof"}
+    save_yappi_profile(file_name)
+    
+    # Return the saved file as a response for direct download
+    return FileResponse(
+        path=file_name,
+        filename=file_name,
+        media_type='application/octet-stream'
+    )
