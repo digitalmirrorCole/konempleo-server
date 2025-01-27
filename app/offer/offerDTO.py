@@ -1,10 +1,10 @@
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel
 from enum import IntEnum
 from datetime import datetime
 
 
-from models.models import contractEnum, ShiftEnum, genderEnum, militaryEnum, LicenseEnum, EducationEnum
+from models.models import contractEnum, ShiftEnum, genderEnum, militaryEnum, EducationEnum
 
 
 class OfferBase(BaseModel):
@@ -20,7 +20,7 @@ class OfferBase(BaseModel):
     military_notebook: Optional[militaryEnum] = None
     age: Optional[str] = None
     job_type: Optional[str] = None
-    license: Optional[LicenseEnum] = None
+    license: Optional[List[str]] = ["No Aplica"]
     disabled: Optional[bool] = False
     experience_years: Optional[int] = None
     offer_type: Optional[str] = None
