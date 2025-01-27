@@ -326,7 +326,8 @@ def get_all_companies(
 ) -> List[CompanyWCount]:
     """
     Gets all companies in the database if the user is a super admin.
-    Includes the CV count and sums the contacted and interested fields for all offers related to each company.
+    Includes the CV count, sums the contacted and interested fields for all offers related to each company,
+    and includes the first active admin and recruiter for each company.
     """
     if userToken.role != UserEnum.super_admin:
         raise HTTPException(status_code=403, detail="You do not have permission to view all companies.")
@@ -350,23 +351,65 @@ def get_all_companies(
         CompanyOffer.companyId
     ).subquery()
 
-    # Step 3: Main query to get companies with aggregated results
+    # Step 3: Subquery for the first admin (responsible) for each company
+    admin_subquery = db.query(
+        CompanyUser.companyId.label("company_id"),
+        Users.fullname.label("admin_name"),
+        Users.email.label("admin_email"),
+        func.row_number().over(
+            partition_by=CompanyUser.companyId,
+            order_by=Users.id
+        ).label("row_number")
+    ).join(
+        Users, Users.id == CompanyUser.userId
+    ).filter(
+        Users.role == UserEnum.admin,
+        Users.active == True,
+        Users.is_deleted == False  # Exclude deleted admins
+    ).subquery()
+
+    # Step 4: Subquery for the first recruiter for each company
+    recruiter_subquery = db.query(
+        CompanyUser.companyId.label("company_id"),
+        Users.fullname.label("recruiter_name"),
+        Users.email.label("recruiter_email"),
+        func.row_number().over(
+            partition_by=CompanyUser.companyId,
+            order_by=Users.id
+        ).label("row_number")
+    ).join(
+        Users, Users.id == CompanyUser.userId
+    ).filter(
+        Users.role == UserEnum.company,
+        Users.active == True,
+        Users.is_deleted == False  # Exclude deleted recruiters
+    ).subquery()
+
+    # Step 5: Main query to get companies with aggregated results and responsible data
     companies_query = db.query(
         CompanyModel,
         func.coalesce(cv_count_subquery.c.cv_count, 0).label("cv_count"),
         func.coalesce(offer_totals_subquery.c.total_contacted, 0).label("total_contacted"),
-        func.coalesce(offer_totals_subquery.c.total_interested, 0).label("total_interested")
+        func.coalesce(offer_totals_subquery.c.total_interested, 0).label("total_interested"),
+        admin_subquery.c.admin_name,
+        admin_subquery.c.admin_email,
+        recruiter_subquery.c.recruiter_name,
+        recruiter_subquery.c.recruiter_email
     ).outerjoin(
         cv_count_subquery, cv_count_subquery.c.company_id == CompanyModel.id
     ).outerjoin(
         offer_totals_subquery, offer_totals_subquery.c.company_id == CompanyModel.id
+    ).outerjoin(
+        admin_subquery, (admin_subquery.c.company_id == CompanyModel.id) & (admin_subquery.c.row_number == 1)
+    ).outerjoin(
+        recruiter_subquery, (recruiter_subquery.c.company_id == CompanyModel.id) & (recruiter_subquery.c.row_number == 1)
     ).filter(
         CompanyModel.is_deleted == False  # Exclude deleted companies
     ).all()
 
-    # Step 4: Format the response
+    # Step 6: Format the response
     result = []
-    for company, cv_count, total_contacted, total_interested in companies_query:
+    for company, cv_count, total_contacted, total_interested, admin_name, admin_email, recruiter_name, recruiter_email in companies_query:
         # Generate a pre-signed URL for the picture
         presigned_url = None
         if company.picture:
@@ -390,18 +433,15 @@ def get_all_companies(
             employees=company.employees,
             cv_count=cv_count,
             total_contacted=total_contacted,
-            total_interested=total_interested
+            total_interested=total_interested,
+            admin_name=admin_name,
+            admin_email=admin_email,
+            recruiter_name=recruiter_name,
+            recruiter_email=recruiter_email
         ))
 
     return result
 
-
-
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 @companyRouter.get("/company/{company_id}", status_code=200, response_model=CompanyInDBBaseWCount)
 def get_company_by_id(
