@@ -4,3 +4,4 @@ __pycache__/
 .env
 settings.json
 fastapi_logs.log
+*.out
