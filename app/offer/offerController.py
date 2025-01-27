@@ -171,7 +171,7 @@ def get_offers_by_company(
     Get offers for a given company and count the number of associated VitaeOffer records for each offer.
     Optionally filter by start_date and close_date.
     Additionally, include counts of CVitae with background_check not null,
-    VitaeOffer with smartdataId not null, and VitaeOffer with whatsapp_status = 'interested'.
+    and use the contacted and interested fields directly from the Offer model.
     """
 
     if userToken.role not in [UserEnum.super_admin, UserEnum.admin, UserEnum.company]:
@@ -193,18 +193,11 @@ def get_offers_by_company(
             status_code=400, detail="Both start_date and close_date must be provided together"
         )
 
-    # Base query with additional counts for background_check, smartdataId, and whatsapp_status = 'interested'
+    # Base query with additional counts for background_check
     query = db.query(
         OfferModel,
         func.count(VitaeOffer.id).label('vitae_offer_count'),
         func.count(func.nullif(CVitae.background_check, None)).label('background_check_count'),
-        func.count(func.nullif(VitaeOffer.smartdataId, None)).label('smartdataId_count'),
-        func.count(
-            case(
-                (VitaeOffer.whatsapp_status == 'interested', 1),
-                else_=None
-            )
-        ).label('interested_count')
     ).join(
         CompanyOffer, CompanyOffer.offerId == OfferModel.id
     ).outerjoin(
@@ -227,14 +220,12 @@ def get_offers_by_company(
     # Execute query
     offers_with_vitae_count = query.all()
 
-    # Format the response with the offer data and the additional counts
+    # Format the response using contacted and interested fields
     result = []
-    for offer, vitae_offer_count, background_check_count, smartdataId_count, interested_count in offers_with_vitae_count:
+    for offer, vitae_offer_count, background_check_count in offers_with_vitae_count:
         offer_dict = offer.__dict__.copy()  # Convert the offer object to a dictionary
         offer_dict['vitae_offer_count'] = vitae_offer_count
         offer_dict['background_check_count'] = background_check_count
-        offer_dict['smartdataId_count'] = smartdataId_count
-        offer_dict['interested_count'] = interested_count  # Add interested count to response
         offer_dict['start_date'] = offer.created_date  # Add start_date to response
         offer_dict['close_date'] = offer.modified_date  # Add close_date to response
         result.append(OfferWithVitaeCount(**offer_dict))
@@ -251,8 +242,7 @@ def get_offers_by_owner(
     """
     Get offers for a given offer owner and count the number of associated VitaeOffer records for each offer.
     Optionally filter by start_date and close_date.
-    Additionally, include counts of CVitae with background_check not null,
-    VitaeOffer with smartdataId not null, and VitaeOffer with whatsapp_status = 'interested'.
+    Additionally, use the contacted and interested fields directly from the Offer model.
     """
 
     # Ensure only super_admin or company users can access this
@@ -277,18 +267,11 @@ def get_offers_by_owner(
             status_code=400, detail="Both start_date and close_date must be provided together"
         )
 
-    # Base query with additional counts for background_check, smartdataId, and whatsapp_status = 'interested'
+    # Base query with additional counts for background_check
     query = db.query(
         OfferModel,
         func.count(VitaeOffer.id).label("vitae_offer_count"),
         func.count(func.nullif(CVitae.background_check, None)).label("background_check_count"),
-        func.count(func.nullif(VitaeOffer.smartdataId, None)).label("smartdataId_count"),
-        func.count(
-            case(
-                (VitaeOffer.whatsapp_status == 'interested', 1),
-                else_=None
-            )
-        ).label('interested_count')
     ).outerjoin(
         VitaeOffer, VitaeOffer.offerId == OfferModel.id
     ).outerjoin(
@@ -309,14 +292,12 @@ def get_offers_by_owner(
     # Execute query
     offers_with_vitae_count = query.all()
 
-    # Format the response with the offer data and the additional counts
+    # Format the response using contacted and interested fields
     result = []
-    for offer, vitae_offer_count, background_check_count, smartdataId_count, interested_count in offers_with_vitae_count:
+    for offer, vitae_offer_count, background_check_count in offers_with_vitae_count:
         offer_dict = offer.__dict__.copy()  # Convert the offer object to a dictionary
         offer_dict["vitae_offer_count"] = vitae_offer_count
         offer_dict["background_check_count"] = background_check_count
-        offer_dict["smartdataId_count"] = smartdataId_count
-        offer_dict["interested_count"] = interested_count  # Add interested count to response
         offer_dict["start_date"] = offer.created_date  # Add start_date to response
         offer_dict["close_date"] = offer.modified_date  # Add close_date to response
         result.append(OfferWithVitaeCount(**offer_dict))

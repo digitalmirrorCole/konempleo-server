@@ -4,7 +4,7 @@ from enum import IntEnum
 from datetime import datetime
 
 
-from models.models import contractEnum, shiftEnum, genderEnum, militaryEnum, licenseEnum, educationEnum
+from models.models import contractEnum, ShiftEnum, genderEnum, militaryEnum, LicenseEnum, EducationEnum
 
 
 class OfferBase(BaseModel):
@@ -15,20 +15,22 @@ class OfferBase(BaseModel):
     contract_type: Optional[contractEnum] = None
     salary: Optional[str] = None
     city: Optional[str] = None
-    shift: Optional[shiftEnum] = None
+    shift: Optional[ShiftEnum] = None
     gender: Optional[genderEnum] = None
     military_notebook: Optional[militaryEnum] = None
     age: Optional[str] = None
     job_type: Optional[str] = None
-    license: Optional[licenseEnum] = None
+    license: Optional[LicenseEnum] = None
     disabled: Optional[bool] = False
     experience_years: Optional[int] = None
     offer_type: Optional[str] = None
-    ed_required: Optional[educationEnum] = None
+    ed_required: Optional[EducationEnum] = None
     cargoId: Optional[int] = None
     filter_questions: Optional[str] = None
     assigned_cvs: Optional[int] = 0
     active: Optional[bool] = True
+    contacted: Optional[int] = 0
+    interested: Optional[int] = 0  
 
 # DTO for creating an Offer
 class OfferCreateDTO(OfferBase):
@@ -42,11 +44,9 @@ class OfferWithVitaeCount(OfferBase):
 class OfferWithVitaeCount(OfferBase):
     id: int
     vitae_offer_count: int
+    background_check_count: int
     start_date: Optional[datetime] = None
     close_date: Optional[datetime] = None
-    background_check_count: int
-    smartdataId_count: int
-    interested_count: int
 
 # DTO for updating an Offer
 class OfferUpdateDTO(BaseModel):

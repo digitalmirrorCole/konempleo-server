@@ -10,7 +10,7 @@ from app.company.companyDTO import Company, CompanyCreate, CompanyInDBBaseWCount
 from sqlalchemy.orm import Session
 from app.company.companyService import upload_picture_to_s3
 from app import deps
-from models.models import CVitae, CompanyUser, UserEnum, Users
+from models.models import CVitae, CompanyOffer, CompanyUser, Offer, UserEnum, Users
 from models.models import Company as CompanyModel
 
 companyRouter = APIRouter()
@@ -216,7 +216,8 @@ def get_company(
     Gets companies owned by the user in the database along with recruiter info.
     Only includes companies that are not marked as deleted (is_deleted = False).
     """
-    # Find all companies associated with the user
+
+    # Step 1: Get company IDs owned by the user
     company_user_records = db.query(CompanyUser).join(CompanyModel).filter(
         CompanyUser.userId == userToken.id,
         CompanyModel.is_deleted == False  # Filter out deleted companies
@@ -227,13 +228,13 @@ def get_company(
 
     company_ids = [record.companyId for record in company_user_records]
 
-    # Subquery for recruiter information
+    # Step 2: Subquery for recruiter information
     recruiter_subquery = db.query(
         CompanyUser.companyId.label("company_id"),
         Users.fullname.label("recruiter_name"),
         Users.email.label("recruiter_email"),
         func.row_number().over(
-            partition_by=CompanyUser.companyId, 
+            partition_by=CompanyUser.companyId,
             order_by=Users.id
         ).label("row_number")
     ).join(
@@ -244,32 +245,51 @@ def get_company(
         Users.is_deleted == False  # Exclude deleted recruiters
     ).subquery()
 
-    # Main query to get companies with recruiter information
-    companies_with_recruiter = db.query(
+    # Step 3: Subquery for CV counts
+    cv_count_subquery = db.query(
+        CVitae.companyId.label("company_id"),
+        func.count(CVitae.Id).label("cv_count")
+    ).group_by(
+        CVitae.companyId
+    ).subquery()
+
+    # Step 4: Subquery for contacted and interested totals
+    offer_totals_subquery = db.query(
+        CompanyOffer.companyId.label("company_id"),
+        func.sum(func.coalesce(Offer.contacted, 0)).label("total_contacted"),
+        func.sum(func.coalesce(Offer.interested, 0)).label("total_interested")
+    ).join(
+        Offer, (Offer.id == CompanyOffer.offerId) & (Offer.active == True)
+    ).group_by(
+        CompanyOffer.companyId
+    ).subquery()
+
+    # Step 5: Main query to get companies with all aggregated data
+    companies_with_details = db.query(
         CompanyModel,
-        func.count(CVitae.Id).label('cv_count'),
+        func.coalesce(cv_count_subquery.c.cv_count, 0).label("cv_count"),
         recruiter_subquery.c.recruiter_name,
-        recruiter_subquery.c.recruiter_email
+        recruiter_subquery.c.recruiter_email,
+        func.coalesce(offer_totals_subquery.c.total_contacted, 0).label("total_contacted"),
+        func.coalesce(offer_totals_subquery.c.total_interested, 0).label("total_interested")
     ).outerjoin(
-        CVitae, CVitae.companyId == CompanyModel.id
+        cv_count_subquery, cv_count_subquery.c.company_id == CompanyModel.id
     ).outerjoin(
         recruiter_subquery, (recruiter_subquery.c.company_id == CompanyModel.id) & 
                             (recruiter_subquery.c.row_number == 1)
+    ).outerjoin(
+        offer_totals_subquery, offer_totals_subquery.c.company_id == CompanyModel.id
     ).filter(
         CompanyModel.id.in_(company_ids),
         CompanyModel.is_deleted == False  # Exclude deleted companies
-    ).group_by(
-        CompanyModel.id,
-        recruiter_subquery.c.recruiter_name,
-        recruiter_subquery.c.recruiter_email
     ).all()
 
-    if not companies_with_recruiter:
+    if not companies_with_details:
         return []
 
-    # Format the response
+    # Step 6: Format the response
     result = []
-    for company, cv_count, recruiter_name, recruiter_email in companies_with_recruiter:
+    for company, cv_count, recruiter_name, recruiter_email, total_contacted, total_interested in companies_with_details:
         # Generate a pre-signed URL for the picture
         presigned_url = None
         if company.picture:
@@ -283,7 +303,7 @@ def get_company(
             document=company.document,
             document_type=company.document_type,
             city=company.city,
-            picture=presigned_url,  # Use the pre-signed URL
+            picture=presigned_url,  # Pre-signed URL for the picture
             activeoffers=company.activeoffers,
             availableoffers=company.availableoffers,
             totaloffers=company.totaloffers,
@@ -292,9 +312,11 @@ def get_company(
             employees=company.employees,
             cv_count=cv_count,
             recruiter_name=recruiter_name,
-            recruiter_email=recruiter_email
+            recruiter_email=recruiter_email,
+            total_contacted=total_contacted,
+            total_interested=total_interested
         ))
-    
+
     return result
 
 
@@ -304,114 +326,82 @@ def get_all_companies(
 ) -> List[CompanyWCount]:
     """
     Gets all companies in the database if the user is a super admin.
-    Includes the first active user with role type 2 (admin) and role type 3 (company_recruit).
-    Only includes companies that are not marked as deleted (is_deleted = False).
+    Includes the CV count and sums the contacted and interested fields for all offers related to each company.
     """
     if userToken.role != UserEnum.super_admin:
         raise HTTPException(status_code=403, detail="You do not have permission to view all companies.")
 
-    # Subquery for first admin user
-    admin_subquery = db.query(
-        CompanyUser.companyId.label("company_id"),
-        Users.fullname.label("admin_name"),
-        Users.email.label("admin_email"),
-        func.row_number().over(
-            partition_by=CompanyUser.companyId, 
-            order_by=Users.id
-        ).label("row_number")
-    ).join(
-        Users, Users.id == CompanyUser.userId
-    ).filter(
-        Users.role == UserEnum.admin,
-        Users.active == True,
-        Users.is_deleted == False  # Exclude deleted admin users
+    # Step 1: Subquery to count CVs per company
+    cv_count_subquery = db.query(
+        CVitae.companyId.label("company_id"),
+        func.count(CVitae.Id).label("cv_count")
+    ).group_by(
+        CVitae.companyId
     ).subquery()
 
-    # Subquery for first recruiter user
-    recruiter_subquery = db.query(
-        CompanyUser.companyId.label("company_id"),
-        Users.fullname.label("recruiter_name"),
-        Users.email.label("recruiter_email"),
-        func.row_number().over(
-            partition_by=CompanyUser.companyId, 
-            order_by=Users.id
-        ).label("row_number")
+    # Step 2: Subquery to sum contacted and interested fields per company
+    offer_totals_subquery = db.query(
+        CompanyOffer.companyId.label("company_id"),
+        func.sum(func.coalesce(Offer.contacted, 0)).label("total_contacted"),
+        func.sum(func.coalesce(Offer.interested, 0)).label("total_interested")
     ).join(
-        Users, Users.id == CompanyUser.userId
-    ).filter(
-        Users.role == UserEnum.company,
-        Users.active == True,
-        Users.is_deleted == False  # Exclude deleted recruiter users
+        Offer, (Offer.id == CompanyOffer.offerId) & (Offer.active == True)
+    ).group_by(
+        CompanyOffer.companyId
     ).subquery()
 
-    # Main query
-    companies_with_details = db.query(
+    # Step 3: Main query to get companies with aggregated results
+    companies_query = db.query(
         CompanyModel,
-        func.count(CVitae.Id).label('cv_count'),
-        admin_subquery.c.admin_name,
-        admin_subquery.c.admin_email,
-        recruiter_subquery.c.recruiter_name,
-        recruiter_subquery.c.recruiter_email
+        func.coalesce(cv_count_subquery.c.cv_count, 0).label("cv_count"),
+        func.coalesce(offer_totals_subquery.c.total_contacted, 0).label("total_contacted"),
+        func.coalesce(offer_totals_subquery.c.total_interested, 0).label("total_interested")
     ).outerjoin(
-        CVitae, CVitae.companyId == CompanyModel.id
+        cv_count_subquery, cv_count_subquery.c.company_id == CompanyModel.id
     ).outerjoin(
-        admin_subquery, (admin_subquery.c.company_id == CompanyModel.id) & 
-                        (admin_subquery.c.row_number == 1)
-    ).outerjoin(
-        recruiter_subquery, (recruiter_subquery.c.company_id == CompanyModel.id) & 
-                            (recruiter_subquery.c.row_number == 1)
+        offer_totals_subquery, offer_totals_subquery.c.company_id == CompanyModel.id
     ).filter(
         CompanyModel.is_deleted == False  # Exclude deleted companies
-    ).group_by(
-        CompanyModel.id,
-        admin_subquery.c.admin_name, admin_subquery.c.admin_email,
-        recruiter_subquery.c.recruiter_name, recruiter_subquery.c.recruiter_email
     ).all()
 
-    if not companies_with_details:
-        return []
-
-    # Combine results into a single entry per company
-    result_dict = {}
-    for company, cv_count, admin_name, admin_email, recruiter_name, recruiter_email in companies_with_details:
+    # Step 4: Format the response
+    result = []
+    for company, cv_count, total_contacted, total_interested in companies_query:
         # Generate a pre-signed URL for the picture
         presigned_url = None
         if company.picture:
             object_key = company.picture.replace(f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/", "")
             presigned_url = generate_presigned_url(object_key)
 
-        if company.id not in result_dict:
-            result_dict[company.id] = CompanyWCount(
-                id=company.id,
-                name=company.name,
-                sector=company.sector,
-                document=company.document,
-                document_type=company.document_type,
-                city=company.city,
-                picture=presigned_url,  # Use the pre-signed URL
-                activeoffers=company.activeoffers,
-                availableoffers=company.availableoffers,
-                totaloffers=company.totaloffers,
-                active=company.active,
-                is_deleted=company.is_deleted,
-                employees=company.employees,
-                cv_count=cv_count,
-                admin_name=admin_name,
-                admin_email=admin_email,
-                recruiter_name=recruiter_name,
-                recruiter_email=recruiter_email
-            )
-        else:
-            # Update recruiter or admin data if it was missing in previous rows
-            if not result_dict[company.id].admin_name and admin_name:
-                result_dict[company.id].admin_name = admin_name
-                result_dict[company.id].admin_email = admin_email
-            if not result_dict[company.id].recruiter_name and recruiter_name:
-                result_dict[company.id].recruiter_name = recruiter_name
-                result_dict[company.id].recruiter_email = recruiter_email
+        # Build the response object
+        result.append(CompanyWCount(
+            id=company.id,
+            name=company.name,
+            sector=company.sector,
+            document=company.document,
+            document_type=company.document_type,
+            city=company.city,
+            picture=presigned_url,  # Pre-signed URL for the picture
+            activeoffers=company.activeoffers,
+            availableoffers=company.availableoffers,
+            totaloffers=company.totaloffers,
+            active=company.active,
+            is_deleted=company.is_deleted,
+            employees=company.employees,
+            cv_count=cv_count,
+            total_contacted=total_contacted,
+            total_interested=total_interested
+        ))
 
-    # Convert dictionary to a list of results
-    return list(result_dict.values())
+    return result
+
+
+
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 @companyRouter.get("/company/{company_id}", status_code=200, response_model=CompanyInDBBaseWCount)
 def get_company_by_id(
@@ -420,7 +410,8 @@ def get_company_by_id(
     userToken: UserToken = Depends(get_user_current)
 ) -> CompanyInDBBaseWCount:
     """
-    Get a specific company by its ID along with admin info, recruiter info, and CV count.
+    Get a specific company by its ID along with admin info, recruiter info, CV count,
+    total_contacted, and total_interested.
     Only includes companies that are not marked as deleted (is_deleted = False).
     """
 
@@ -458,36 +449,55 @@ def get_company_by_id(
         Users.is_deleted == False  # Exclude deleted recruiters
     ).subquery()
 
-    # Query to get the company with admin, recruiter, and CV count information
+    # Subquery to calculate contacted and interested totals
+    offer_totals_subquery = db.query(
+        CompanyOffer.companyId.label("company_id"),
+        func.sum(func.coalesce(Offer.contacted, 0)).label("total_contacted"),
+        func.sum(func.coalesce(Offer.interested, 0)).label("total_interested")
+    ).join(
+        Offer, (Offer.id == CompanyOffer.offerId) & (Offer.active == True)
+    ).filter(
+        CompanyOffer.companyId == company_id
+    ).group_by(
+        CompanyOffer.companyId
+    ).subquery()
+
+    # Main query to fetch company details
     company_with_details = db.query(
         CompanyModel,
         func.count(CVitae.Id).label('cv_count'),
         admin_subquery.c.admin_name,
         admin_subquery.c.admin_email,
         recruiter_subquery.c.recruiter_name,
-        recruiter_subquery.c.recruiter_email
+        recruiter_subquery.c.recruiter_email,
+        func.coalesce(offer_totals_subquery.c.total_contacted, 0).label('total_contacted'),
+        func.coalesce(offer_totals_subquery.c.total_interested, 0).label('total_interested')
     ).outerjoin(
         CVitae, CVitae.companyId == CompanyModel.id
     ).outerjoin(
-        admin_subquery, (admin_subquery.c.company_id == CompanyModel.id) &
+        admin_subquery, (admin_subquery.c.company_id == CompanyModel.id) & 
                         (admin_subquery.c.row_number == 1)
     ).outerjoin(
-        recruiter_subquery, (recruiter_subquery.c.company_id == CompanyModel.id) &
+        recruiter_subquery, (recruiter_subquery.c.company_id == CompanyModel.id) & 
                             (recruiter_subquery.c.row_number == 1)
+    ).outerjoin(
+        offer_totals_subquery, offer_totals_subquery.c.company_id == CompanyModel.id
     ).filter(
         CompanyModel.id == company_id,
         CompanyModel.is_deleted == False  # Exclude deleted companies
     ).group_by(
         CompanyModel.id,
         admin_subquery.c.admin_name, admin_subquery.c.admin_email,
-        recruiter_subquery.c.recruiter_name, recruiter_subquery.c.recruiter_email
+        recruiter_subquery.c.recruiter_name, recruiter_subquery.c.recruiter_email,
+        offer_totals_subquery.c.total_contacted,
+        offer_totals_subquery.c.total_interested
     ).first()
 
     if not company_with_details:
         raise HTTPException(status_code=404, detail="Company not found.")
 
     # Extract company details
-    company, cv_count, admin_name, admin_email, recruiter_name, recruiter_email = company_with_details
+    company, cv_count, admin_name, admin_email, recruiter_name, recruiter_email, total_contacted, total_interested = company_with_details
 
     # Generate a pre-signed URL for the picture
     presigned_url = None
@@ -496,7 +506,7 @@ def get_company_by_id(
         presigned_url = generate_presigned_url(object_key)
 
     # Format the response
-    return CompanyWCountWithRecruiter(
+    return CompanyInDBBaseWCount(
         id=company.id,
         name=company.name,
         sector=company.sector,
@@ -514,5 +524,7 @@ def get_company_by_id(
         admin_name=admin_name,
         admin_email=admin_email,
         recruiter_name=recruiter_name,
-        recruiter_email=recruiter_email
+        recruiter_email=recruiter_email,
+        total_contacted=total_contacted,
+        total_interested=total_interested
     )

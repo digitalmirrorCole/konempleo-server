@@ -1,4 +1,4 @@
-from sqlalchemy import TIMESTAMP, Boolean, Column, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func, text
+from sqlalchemy import ARRAY, TIMESTAMP, Boolean, Column, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.orm import relationship
 from enum import IntEnum
 
@@ -12,13 +12,24 @@ class UserEnum(IntEnum):
     integrations = 5
 
 class contractEnum(IntEnum):
-    full_time = 1
-    part_time = 2
+    termino_fijo = 1
+    termino_indefinido = 2
+    obra_o_labor = 3
+    prestacion_servicios = 4
+    practicas = 5
+    freelance = 6
 
-class shiftEnum(IntEnum):
-    morning = 1
-    evening = 2
-    night = 3
+class OfferTypeEnum(IntEnum):
+    presencial = 1
+    remoto = 2
+    hibrido = 3
+
+
+class ShiftEnum(IntEnum):
+    lv = 1  # L - V
+    ls = 2  # L - S
+    rotativo = 3  # Rotativo
+    por_definir = 4  # Por definir
 
 class genderEnum(IntEnum):
     male = 1
@@ -30,16 +41,22 @@ class militaryEnum(IntEnum):
     no = 2
     NA = 3
 
-class licenseEnum(IntEnum):
-    required = 1
-    not_required = 2
+class ExperienceYearsEnum(IntEnum):
+    sin_experiencia = 0
+    seis_meses = 1
+    un_ano = 2
+    dos_anos = 3
+    tres_anos = 4
+    mas_de_tres_anos = 5
 
-class educationEnum(IntEnum):
-    none = 1
-    high_school = 2
-    bachelor = 3
-    master = 4
-    doctorate = 5
+class EducationEnum(IntEnum):
+    primaria = 1
+    bachillerato = 2
+    tecnico = 3
+    tecnologo = 4
+    universitario = 5
+    posgrado = 6
+
 
 class Company(Base):
     __tablename__ = 'company'
@@ -113,19 +130,19 @@ class Offer(Base):
     duties = Column(String)
     exp_area = Column(String)
     vacants = Column(Integer)
-    contract_type = Column(Enum(contractEnum))
+    contract_type = Column(Enum(contractEnum, native_enum=False), nullable=True)
     salary = Column(String)
     city = Column(Integer)
-    shift = Column(Enum(shiftEnum))
+    shift = Column(Enum(ShiftEnum), nullable=True)
     gender = Column(Enum(genderEnum))
     military_notebook = Column(Enum(militaryEnum))
     age = Column(String)
     job_type = Column(String)
-    license = Column(Enum(licenseEnum))
+    license = Column(ARRAY(String), default=["No Aplica"], nullable=False)
     disabled = Column(Boolean, default=False)
-    experience_years = Column(Integer)
-    offer_type = Column(String)
-    ed_required = Column(Enum(educationEnum))
+    experience_years = Column(Enum(ExperienceYearsEnum), nullable=True)
+    offer_type = Column(Enum(OfferTypeEnum), nullable=True)
+    ed_required = Column(Enum(EducationEnum), nullable=True)
     cargoId = Column(Integer, ForeignKey('cargo.id'))
     offer_owner = Column(Integer, ForeignKey('users.id'), nullable=False)
     assigned_cvs = Column(Integer, server_default=text('0'))
@@ -133,6 +150,8 @@ class Offer(Base):
     active = Column(Boolean, default=True)
     created_date = Column(DateTime, server_default=func.now(), nullable=False)
     modified_date = Column(DateTime, onupdate=func.now(), server_default=func.now(), nullable=False)
+    contacted = Column(Integer, default=0)
+    interested = Column(Integer, default=0)
 
     
     offer_skills = relationship('OfferSkill', back_populates='offer')

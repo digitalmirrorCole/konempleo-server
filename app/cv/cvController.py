@@ -372,6 +372,10 @@ def send_campaign(
         # Update the VitaeOffer record
         vitae_offer.whatsapp_status = "pending_response"
         vitae_offer.smartdataId = message_id
+
+        # Increment the `contacted` count for the related Offer
+        offer.contacted += 1
+
         db.commit()
         db.refresh(vitae_offer)
 
@@ -395,11 +399,11 @@ def update_whatsapp_status(
     offerId: int = Query(..., description="The Offer ID associated with the VitaeOffer"),
     userResponse: str = Body(..., description="The user response ('interested' or 'not_interested')"),
     db: Session = Depends(get_db),
-    userToken: UserToken = Depends(get_user_current)
+    userToken: UserToken = Depends(get_user_current),
 ):
     """
     Update the WhatsApp status of a VitaeOffer record based on user response.
-    Only accessible to users with the 'integrations' role.
+    Increment the `interested` field in the related Offer if the user response is 'interested'.
     """
     try:
         # Validate the user's role
@@ -409,7 +413,7 @@ def update_whatsapp_status(
         # Fetch the VitaeOffer record
         vitae_offer = db.query(VitaeOffer).filter(
             VitaeOffer.smartdataId == smartdataId,
-            VitaeOffer.offerId == offerId
+            VitaeOffer.offerId == offerId,
         ).first()
 
         # Check if VitaeOffer exists
@@ -422,6 +426,16 @@ def update_whatsapp_status(
 
         # Update the WhatsApp status
         vitae_offer.whatsapp_status = userResponse
+
+        # If the response is 'interested', increment the 'interested' field in the related Offer
+        if userResponse == "interested":
+            offer = db.query(Offer).filter(Offer.id == offerId).first()
+            if not offer:
+                raise HTTPException(status_code=404, detail=f"Offer with ID {offerId} not found.")
+            
+            # Increment the interested field
+            offer.interested += 1  # Since the default is 0 and not nullable, no need to check for None
+
         db.commit()
         db.refresh(vitae_offer)
 

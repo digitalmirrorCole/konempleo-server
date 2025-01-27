@@ -56,7 +56,6 @@ class LimitRequestSizeMiddleware(BaseHTTPMiddleware):
 
 origins = ["*"]
 
-app.add_middleware(LimitRequestSizeMiddleware, max_body_size=50 * 1024 * 1024)
 
 app.add_middleware(
     CORSMiddleware,
