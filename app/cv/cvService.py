@@ -310,14 +310,14 @@ def analyze_and_update_vitae_offers(
 
         # Process each candidate
         for idx, (temp_cvitae, candidate_data) in enumerate(zip(cvitae_records, candidates)):
-            if not candidate_data.get("nombre") or not candidate_data.get("correo"):
-                print(f"Skipping CVitae due to missing name or email. Data: {candidate_data}")
-                delete_from_s3(temp_cvitae.url)  # Delete the file from S3
-                continue  # Skip invalid records
+            # Use fallback values for missing fields
+            candidate_name = candidate_data.get("nombre", "name not found")
+
+            candidate_email = candidate_data.get("correo", "email not found")
 
             # Create CVitae record with valid data
-            temp_cvitae.candidate_name = candidate_data.get("nombre")
-            temp_cvitae.candidate_mail = candidate_data.get("correo")
+            temp_cvitae.candidate_name = candidate_name
+            temp_cvitae.candidate_mail = candidate_email
             temp_cvitae.candidate_dni = candidate_data.get("cedula")
             temp_cvitae.candidate_dni_type = candidate_data.get("tipo_documento")
             temp_cvitae.candidate_city = candidate_data.get("ciudad")
@@ -332,7 +332,7 @@ def analyze_and_update_vitae_offers(
                 offerId=offerId,
                 status="pending",
                 ai_response=json.dumps(candidate_data),
-                response_score=candidate_data.get("score"),
+                response_score=candidate_data.get("score",0),
             )
             db.add(vitae_offer)
 
@@ -613,14 +613,6 @@ def process_existing_vitae_records(
 
         # Process each candidate
         for idx, (cvitae, candidate_data) in enumerate(zip(cvitae_records, candidates)):
-            if not candidate_data.get("nombre") or not candidate_data.get("correo"):
-                print(f"Skipping CVitae due to missing name or email. Data: {candidate_data}")
-                # Delete any existing VitaeOffer record for this CVitae and offerId
-                db.query(VitaeOffer).filter(
-                    VitaeOffer.cvitaeId == cvitae.Id, VitaeOffer.offerId == offerId
-                ).delete()
-                continue  # Skip invalid records
-
             # Update/Create VitaeOffer record
             vitae_offer = db.query(VitaeOffer).filter(
                 VitaeOffer.cvitaeId == cvitae.Id, VitaeOffer.offerId == offerId
@@ -629,7 +621,7 @@ def process_existing_vitae_records(
             if vitae_offer:
                 # Update existing VitaeOffer
                 vitae_offer.ai_response = json.dumps(candidate_data)
-                vitae_offer.response_score = candidate_data.get("score")
+                vitae_offer.response_score = candidate_data.get("score",0)
                 vitae_offer.status = "pending"
             else:
                 # Create new VitaeOffer
@@ -638,7 +630,7 @@ def process_existing_vitae_records(
                     offerId=offerId,
                     status="pending",
                     ai_response=json.dumps(candidate_data),
-                    response_score=candidate_data.get("score"),
+                    response_score=candidate_data.get("score",0),
                 )
                 db.add(vitae_offer)
 

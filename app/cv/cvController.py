@@ -1,9 +1,11 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor 
+from contextlib import contextmanager
 import os
 from typing import List, Optional
 from fastapi import APIRouter, Body, Depends, File, Query, UploadFile, BackgroundTasks, HTTPException, status
 from requests import Session
+from db.session import SessionLocal
 
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_user_current
@@ -533,16 +535,61 @@ async def process_existing_cvs(
     genre_offer = offer.gender
     experience_offer = offer.experience_years
 
-    # Process the CVitae records
-    process_existing_vitae_records(
-        cvitae_ids=cvitae_ids,
-        offerId=offerId,
-        skills_list=skills_list,
-        city_offer=city_offer,
-        age_offer=age_offer,
-        genre_offer=genre_offer,
-        experience_offer=experience_offer,
-        db=db
-    )
+    # Split `cvitae_ids` into batches of 10
+    batches = [cvitae_ids[i:i + 10] for i in range(0, len(cvitae_ids), 10)]
+
+    @contextmanager
+    def get_thread_safe_db():
+        """
+        Context manager to provide a thread-safe session.
+        """
+        db = SessionLocal()  # Create a new session for each thread
+        try:
+            yield db
+        finally:
+            db.close()
+
+    def process_batch(batch, offerId, skills_list, city_offer, age_offer, genre_offer, experience_offer):
+        """
+        Process a single batch of CVitae records in a thread-safe manner.
+        """
+        with get_thread_safe_db() as db:
+            # Use the updated `process_existing_vitae_records` method to handle the batch
+            process_existing_vitae_records(
+                cvitae_ids=batch,
+                offerId=offerId,
+                skills_list=skills_list,
+                city_offer=city_offer,
+                age_offer=age_offer,
+                genre_offer=genre_offer,
+                experience_offer=experience_offer,
+                db=db
+            )
+
+    async def process_batches():
+        """
+        Asynchronously process all batches using multithreading.
+        """
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            await asyncio.gather(
+                *[
+                    loop.run_in_executor(
+                        executor,
+                        process_batch,
+                        batch,
+                        offerId,
+                        skills_list,
+                        city_offer,
+                        age_offer,
+                        genre_offer,
+                        experience_offer
+                    )
+                    for batch in batches
+                ]
+            )
+
+    # Process all batches asynchronously
+    await process_batches()
 
     return {"detail": "Processing of existing CVitae records completed successfully."}
