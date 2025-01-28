@@ -59,7 +59,7 @@ async def upload_cvs(
     experience_offer = offer.experience_years
 
     # Split files into batches
-    file_batches = [files[i:i + 10] for i in range(0, len(files), 10)]
+    file_batches = [files[i:i + 5] for i in range(0, len(files), 5)]
 
     async def process_files(batch):
         """
@@ -88,7 +88,7 @@ async def upload_cvs(
         """
         for batch in file_batches:
             await process_files(batch)  # Process the current batch
-            await asyncio.sleep(2)  # Add a 2-second delay before the next batch
+            await asyncio.sleep(3)  # Add a 2-second delay before the next batch
 
     # Process all batches with delay
     await process_batches_with_delay()
@@ -545,7 +545,7 @@ async def process_existing_cvs(
     experience_offer = offer.experience_years
 
     # Split `cvitae_ids` into batches of 10
-    batches = [cvitae_ids[i:i + 10] for i in range(0, len(cvitae_ids), 10)]
+    batches = [cvitae_ids[i:i + 5] for i in range(0, len(cvitae_ids), 5)]
 
     @contextmanager
     def get_thread_safe_db():
@@ -595,7 +595,7 @@ async def process_existing_cvs(
                     experience_offer
                 )
                 # Add a 2-second delay before processing the next batch
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)
 
     # Process all batches asynchronously
     await process_batches()

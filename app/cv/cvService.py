@@ -595,11 +595,19 @@ def process_existing_vitae_records(
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": full_prompt}
         ]
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo-16k",
-            messages=messages,
-            temperature=0
-        )
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-3.5-turbo-16k",
+                messages=messages,
+                temperature=0
+            )
+
+        except openai.error.InvalidRequestError as e:
+            print(f"Invalid Request Error: {e}")
+            print(f"Response Body: {e.response.json()}")  # Log the response body
+        except Exception as e:
+            print(f"Unhandled Error: {e}")
+
         raw_response = response.choices[0].message.content.strip()
 
         # Parse GPT response
