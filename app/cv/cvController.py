@@ -33,7 +33,8 @@ async def upload_cvs(
     """
 
     if userToken.role not in [UserEnum.super_admin, UserEnum.company, UserEnum.company_recruit, UserEnum.admin]:
-            raise HTTPException(status_code=403, detail="You do not have permission to access this endpoint.")
+        raise HTTPException(status_code=403, detail="You do not have permission to access this endpoint.")
+
     # Check if the offer exists and is active
     offer = db.query(Offer).filter(Offer.id == offerId).first()
     if not offer or not offer.active:
@@ -71,7 +72,7 @@ async def upload_cvs(
                 process_batch,
                 batch,
                 companyId,
-                company_name,  # Pass the company name
+                company_name,
                 offerId,
                 skills_list,
                 city_offer,
@@ -81,8 +82,16 @@ async def upload_cvs(
                 db
             )
 
-    # Process all batches concurrently
-    await asyncio.gather(*(process_files(batch) for batch in file_batches))
+    async def process_batches_with_delay():
+        """
+        Asynchronously process all batches with a delay between each batch.
+        """
+        for batch in file_batches:
+            await process_files(batch)  # Process the current batch
+            await asyncio.sleep(2)  # Add a 2-second delay before the next batch
+
+    # Process all batches with delay
+    await process_batches_with_delay()
 
     return {"detail": "All files processed successfully"}
 
@@ -568,26 +577,25 @@ async def process_existing_cvs(
 
     async def process_batches():
         """
-        Asynchronously process all batches using multithreading.
+        Asynchronously process all batches using multithreading with delays.
         """
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as executor:
-            await asyncio.gather(
-                *[
-                    loop.run_in_executor(
-                        executor,
-                        process_batch,
-                        batch,
-                        offerId,
-                        skills_list,
-                        city_offer,
-                        age_offer,
-                        genre_offer,
-                        experience_offer
-                    )
-                    for batch in batches
-                ]
-            )
+            for batch in batches:
+                # Process the current batch
+                await loop.run_in_executor(
+                    executor,
+                    process_batch,
+                    batch,
+                    offerId,
+                    skills_list,
+                    city_offer,
+                    age_offer,
+                    genre_offer,
+                    experience_offer
+                )
+                # Add a 2-second delay before processing the next batch
+                await asyncio.sleep(2)
 
     # Process all batches asynchronously
     await process_batches()
