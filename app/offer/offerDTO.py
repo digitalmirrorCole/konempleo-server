@@ -32,6 +32,9 @@ class OfferBase(BaseModel):
     contacted: Optional[int] = 0
     interested: Optional[int] = 0  
 
+class Config:
+        use_enum_values = True  # Ensures enums are treated as their values (integers)
+
 # DTO for creating an Offer
 class OfferCreateDTO(OfferBase):
     companyId: int

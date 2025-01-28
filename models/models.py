@@ -130,7 +130,7 @@ class Offer(Base):
     duties = Column(String)
     exp_area = Column(String)
     vacants = Column(Integer)
-    contract_type = Column(Enum(contractEnum), nullable=True)
+    contract_type = Column(Integer, nullable=True)
     salary = Column(String)
     city = Column(Integer)
     shift = Column(Enum(ShiftEnum), nullable=True)
