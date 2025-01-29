@@ -23,7 +23,7 @@ COPY ./app/.env /konempleo/db/.env
 # Set environment variable from .env file
 ENV $(cat /konempleo/app/.env)
 
-EXPOSE 80
+EXPOSE 8000
 
 COPY docker-start.sh /konempleo/docker-start.sh
 RUN chmod +x /konempleo/docker-start.sh
