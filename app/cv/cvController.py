@@ -16,9 +16,11 @@ from models.models import Cargo, Company, Offer, CVitae, OfferSkill, Skill, User
 import requests
 from requests.auth import HTTPBasicAuth
 from datetime import datetime
+from app.utils.thread_manager import ThreadPoolManager
 
 cvRouter = APIRouter()
 cvRouter.tags = ['CV']
+thread_pool_manager = ThreadPoolManager(max_workers=5)
 
 @cvRouter.post("/offers/upload-cvs/", status_code=201, response_model=None)
 async def upload_cvs(
@@ -91,9 +93,10 @@ async def upload_cvs(
             await asyncio.sleep(3)  # Add a 2-second delay before the next batch
 
     # Process all batches with delay
-    await process_batches_with_delay()
+    # await process_batches_with_delay()
+    task_id = thread_pool_manager.submit_task(process_batches_with_delay)
 
-    return {"detail": "All files processed successfully"}
+    return {"detail": "Processing files", "task": task_id}
 
 
 
@@ -463,6 +466,19 @@ def update_whatsapp_status(
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 
+@cvRouter.get("/task/{task_id}", status_code=200, response_model=None)
+def get_task_status(
+    task_id: int,
+    db: Session = Depends(get_db),
+    userToken: UserToken = Depends(get_user_current)
+):
+    """
+    Retrieve the current status of a background task
+    """
+    status = thread_pool_manager.get_task_status(task_id)
+    return {"task": task_id, "status": status}
+
+
 @cvRouter.get("/companies/{company_id}/cvitae", response_model=List[CVitaeResponseDTO])
 def get_cvitae_by_company(
     company_id: int,
@@ -513,6 +529,7 @@ def get_cvitae_by_company(
     ]
 
     return response
+
 
 @cvRouter.post("/offers/process-existing-cvs/", status_code=200, response_model=None)
 async def process_existing_cvs(
@@ -598,6 +615,7 @@ async def process_existing_cvs(
                 await asyncio.sleep(3)
 
     # Process all batches asynchronously
-    await process_batches()
+    task_id = thread_pool_manager.submit_task(process_batches)
+    # await process_batches()
 
-    return {"detail": "Processing of existing CVitae records completed successfully."}
+    return {"detail": "Processing existing CVitae records...", "task": task_id}

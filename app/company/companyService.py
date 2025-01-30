@@ -25,14 +25,6 @@ class ServiceCompany(ControllerBase[Company, CompanyCreate, CompanyUpdate, Compa
 
 company = ServiceCompany(Company)
 
-def getByName(db: session, uid: str) -> Company:
-    fernet = Fernet(os.getenv("UID_KEY"))
-    try:
-        name = fernet.decrypt(uid).decode()
-    except:
-        raise HTTPException(status_code=404, detail="No company with given uid")     
-    return db.query(Company).filter(Company.name == name).first()
-
 def upload_picture_to_s3(picture: UploadFile, company_name: str) -> str:
     try:
         # Generate a unique file name
