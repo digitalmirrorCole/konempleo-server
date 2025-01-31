@@ -616,7 +616,7 @@ def get_task_status(
     """
     Retrieve the current status of a background task
     """
-    status = thread_pool_manager.get_task_status(task_id)
+    status = thread_pool_manager.get_task(task_id)
     if status is None:
         raise HTTPException(status_code=404, detail="Task not found.")
     return status
