@@ -110,7 +110,7 @@ class ThreadPoolManager:
 
     def get_task(self, task_id):
         """Returns the status of a given task."""
-        result = self.tasks.get(task_id, {"status": None})
+        result = self.tasks.get(task_id, None)
         return result.parse() if result is not None else None
 
     def get_tasks(self):
