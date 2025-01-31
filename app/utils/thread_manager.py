@@ -44,7 +44,7 @@ class Task:
         elif status == Status.FAILED:
             self.message = message if message is not None else "Failed"
 
-    def __dict__(self):
+    def parse(self):
         return {"status": self.status, "message": self.message,
                 "offer_id": self.offer_id, "task_id": self.task_id}
 
@@ -111,10 +111,10 @@ class ThreadPoolManager:
     def get_task(self, task_id):
         """Returns the status of a given task."""
         result = self.tasks.get(task_id, {"status": None})
-        return result.__dict__() if result is not None else None
+        return result.parse() if result is not None else None
 
     def get_tasks(self):
         result = []
         for task_id in self.tasks.keys():
-            result.append(self.tasks[task_id].__dict__())
+            result.append(self.tasks[task_id].parse())
         return result
