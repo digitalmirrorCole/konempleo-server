@@ -78,6 +78,9 @@ async def upload_cvs(
     tasks = []
     for batch in file_batches:
         results = process_file_text(batch, companyId, company_name, db)
+        if results is None:
+            raise HTTPException(status_code=500,
+                                detail="There was an error uploading files")
         tasks.append(
             thread_pool_manager.submit_task(offerId,
                                             analyze_and_update_vitae_offers,

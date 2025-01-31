@@ -164,6 +164,7 @@ def process_file_text(
         db.rollback()
         print(f"Error processing batch: {str(e)}")
         raise
+    return None
 
 
 def analyze_and_update_vitae_offers(
