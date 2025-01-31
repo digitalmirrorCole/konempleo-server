@@ -65,8 +65,9 @@ class ThreadPoolManager:
         """Periodically removes completed tasks."""
         while True:
             time.sleep(self.cleanup_interval)
-            for task_id in self.tasks.keys():
-                if self.tasks[task_id].is_cleanable():
+            for task_id in list(self.tasks.keys()):
+                task = self.tasks[task_id]
+                if task.is_cleanable():
                     del self.tasks[task_id]
 
     def submit_task(self, offer_id, func, *args, **kwargs):

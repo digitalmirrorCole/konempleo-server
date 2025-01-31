@@ -596,7 +596,7 @@ def process_existing_vitae_records(
             {"role": "user", "content": full_prompt}
         ]
         raw_response = None
-        base_delay = 2
+        base_delay = 0.5
         max_retries = 3
         for attempt in range(max_retries):  # Iterate max retries
             try:
