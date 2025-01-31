@@ -34,16 +34,15 @@ class Task:
 
     def set_status(self, status, message=None):
         self.status = status
-        match status:
-            case Status.QUEUED:
-                self.message = message if message is not None else "Queued"
-            case Status.PROCESSING:
-                self.message = message if message is not None else "Processing"
-                self.start_date = time.time()
-            case Status.COMPLETED:
-                self.message = message if message is not None else "Completed"
-            case Status.FAILED:
-                self.message = message if message is not None else "Failed"
+        if status == Status.QUEUED:
+            self.message = message if message is not None else "Queued"
+        elif status == Status.PROCESSING:
+            self.message = message if message is not None else "Processing"
+            self.start_date = time.time()
+        elif status == Status.COMPLETED:
+            self.message = message if message is not None else "Completed"
+        elif status == Status.FAILED:
+            self.message = message if message is not None else "Failed"
 
     def __dict__(self):
         return {"status": self.status, "message": self.message,
