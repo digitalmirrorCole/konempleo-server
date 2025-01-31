@@ -308,6 +308,7 @@ def analyze_and_update_vitae_offers(
                 )
                 raw_response = response.choices[0].message.content.strip()
                 response_json = json.loads(raw_response)
+                break
             except openai.error.RateLimitError:
                 if attempt >= max_retries:
                     return
@@ -630,6 +631,7 @@ def process_existing_vitae_records(
                 )
                 raw_response = response.choices[0].message.content.strip()
                 response_json = json.loads(raw_response)
+                break
             except openai.error.RateLimitError:
                 if attempt >= max_retries:
                     return
