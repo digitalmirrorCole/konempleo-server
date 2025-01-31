@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
+import inspect
 
 
 class ThreadPoolManager:
@@ -23,10 +24,16 @@ class ThreadPoolManager:
                                  **kwargs)
         return task_id
 
+    def is_async(self, func):
+        return inspect.iscoroutinefunction(func)
+
     def _run_task(self, task_id, func, *args, **kwargs):
         self.tasks[task_id] = "Processing"
         try:
-            func(*args, **kwargs)
+            if self.is_async(func):
+                await func(*args, **kwargs)
+            else:
+                func(*args, **kwargs)
             self.tasks[task_id] = "Completed"
         except Exception as e:
             self.tasks[task_id] = f"Failed: {str(e)}"
