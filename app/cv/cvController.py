@@ -68,6 +68,7 @@ async def upload_cvs(
         fileobj["content"] = file.file.read()
         fileobj["content"] = file.file.read()
         file.file.seek(0)
+        fileobj["file"] = file
         pfiles.append(fileobj)
 
     # Split files into batches
