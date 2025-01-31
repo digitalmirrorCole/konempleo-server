@@ -615,8 +615,7 @@ def process_existing_vitae_records(
             response_json = json.loads(raw_response)
         except json.JSONDecodeError as e:
             print(f"JSON parsing error: {e}, Raw response: {raw_response}")
-            raise HTTPException(status_code=500,
-                                detail="Failed to parse GPT response.")
+            return
 
         candidates = response_json.get("candidatos", [])
 
