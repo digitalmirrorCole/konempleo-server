@@ -133,12 +133,11 @@ def process_batch(
 
         # Extract text from each CV, upload to S3, and save temporary CVitae records
         for file in batch:
-            file_extension = file.filename.split('.')[-1].lower()
-            file_name = file.filename
+            file_extension = file["extension"]
+            file_name = file["name"]
 
             # Read the file content and reset pointer
-            file_content = file.file.read()
-            file.file.seek(0)
+            file_content = file["content"]
 
             # Extract text based on file type
             if file_extension == 'pdf':
@@ -152,7 +151,7 @@ def process_batch(
 
             # Upload file to S3
             s3_key = f"{company_name}/cvs/{file_name}"
-            s3_url = upload_to_s3(file, s3_key)
+            s3_url = upload_to_s3(file["file"], s3_key)
 
             # Create a temporary CVitae record with the S3 URL
             temp_cvitae = CVitae(

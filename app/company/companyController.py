@@ -12,6 +12,7 @@ from app.company.companyService import upload_picture_to_s3
 from app import deps
 from models.models import CVitae, CompanyOffer, CompanyUser, Offer, UserEnum, Users
 from models.models import Company as CompanyModel
+import traceback
 
 companyRouter = APIRouter()
 companyRouter.tags = ['Company']
@@ -53,8 +54,6 @@ def create_company(
 
         # Step 2: Validate konempleo_responsible
         konempleo_user = db.query(Users).filter(Users.id == company_in.konempleo_responsible).first()
-        if not konempleo_user or konempleo_user.role != UserEnum.admin:
-            raise HTTPException(status_code=400, detail="The konempleo_responsible user must have the admin role.")
 
         # Step 3: Prepare and insert company data
         company_data = company_in.dict()

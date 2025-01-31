@@ -60,8 +60,18 @@ async def upload_cvs(
     genre_offer = offer.gender
     experience_offer = offer.experience_years
 
+    pfiles = []
+    for file in files:
+        fileobj = {}
+        fileobj["extension"] = file.filename.split('.')[-1].lower()
+        fileobj["name"] = file.filename
+        fileobj["content"] = file.file.read()
+        fileobj["content"] = file.file.read()
+        file.file.seek(0)
+        pfiles.append(fileobj)
+
     # Split files into batches
-    file_batches = [files[i:i + 5] for i in range(0, len(files), 5)]
+    file_batches = [pfiles[i:i + 5] for i in range(0, len(pfiles), 5)]
 
     # Process all batches with delay
     tasks = []
