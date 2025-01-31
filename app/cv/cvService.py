@@ -8,7 +8,6 @@ from typing import List
 from aiohttp import ClientError
 from docx import Document
 from fastapi import UploadFile, HTTPException
-from openai import OpenAI
 import openai
 from pdf2image import convert_from_bytes
 import pytesseract
@@ -17,6 +16,7 @@ import boto3
 import fitz
 import requests
 from requests.auth import HTTPBasicAuth
+import traceback
 
 from models.models import CVitae, VitaeOffer 
 
@@ -604,7 +604,7 @@ def process_existing_vitae_records(
 
         except openai.error.InvalidRequestError as e:
             print(f"Invalid Request Error: {e}")
-            print(f"Response Body: {e.response.json()}")  # Log the response body
+            print(f"Response Body: {e.response.json()}")  # Log the body
         except Exception as e:
             print(f"Unhandled Error: {e}")
 
@@ -615,37 +615,45 @@ def process_existing_vitae_records(
             response_json = json.loads(raw_response)
         except json.JSONDecodeError as e:
             print(f"JSON parsing error: {e}, Raw response: {raw_response}")
-            raise HTTPException(status_code=500, detail="Failed to parse GPT response.")
+            raise HTTPException(status_code=500,
+                                detail="Failed to parse GPT response.")
 
         candidates = response_json.get("candidatos", [])
 
         # Process each candidate
-        for idx, (cvitae, candidate_data) in enumerate(zip(cvitae_records, candidates)):
-            # Update/Create VitaeOffer record
-            vitae_offer = db.query(VitaeOffer).filter(
-                VitaeOffer.cvitaeId == cvitae.Id, VitaeOffer.offerId == offerId
-            ).first()
+        for idx, (cvitae, candidate_data) in enumerate(zip(cvitae_records,
+                                                           candidates)):
+            try:
+                # Update/Create VitaeOffer record
+                vitae_offer = db.query(VitaeOffer).filter(
+                    VitaeOffer.cvitaeId == cvitae.Id,
+                    VitaeOffer.offerId == offerId
+                ).first()
 
-            if vitae_offer:
-                # Update existing VitaeOffer
-                vitae_offer.ai_response = json.dumps(candidate_data)
-                vitae_offer.response_score = candidate_data.get("score",0)
-                vitae_offer.status = "pending"
-            else:
-                # Create new VitaeOffer
-                vitae_offer = VitaeOffer(
-                    cvitaeId=cvitae.Id,
-                    offerId=offerId,
-                    status="pending",
-                    ai_response=json.dumps(candidate_data),
-                    response_score=candidate_data.get("score",0),
-                )
-                db.add(vitae_offer)
+                if vitae_offer:
+                    # Update existing VitaeOffer
+                    vitae_offer.ai_response = json.dumps(candidate_data)
+                    vitae_offer.response_score = candidate_data.get("score", 0)
+                    vitae_offer.status = "pending"
+                else:
+                    # Create new VitaeOffer
+                    vitae_offer = VitaeOffer(
+                        cvitaeId=cvitae.Id,
+                        offerId=offerId,
+                        status="pending",
+                        ai_response=json.dumps(candidate_data),
+                        response_score=candidate_data.get("score", 0),
+                    )
+                    db.add(vitae_offer)
+            except Exception as e:
+                print(traceback.format_exc())
+                print(f"Error processing: {str(cvitae)}\nError: {str(e)}")
 
         db.commit()
 
     except Exception as e:
         # Rollback changes if something goes wrong
+        print(traceback.format_exc())
         db.rollback()
         print(f"Error processing existing CVitae records: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while processing CVitae records.")
