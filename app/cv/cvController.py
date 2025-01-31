@@ -93,8 +93,8 @@ async def upload_cvs(
             await asyncio.sleep(3)  # Add a 2-second delay before the next batch
 
     # Process all batches with delay
-    # await process_batches_with_delay()
-    task_id = thread_pool_manager.submit_task(process_batches_with_delay)
+    task_id = thread_pool_manager.submit_task(offerId,
+                                              process_batches_with_delay)
 
     return {"detail": "Processing files", "task": task_id}
 
@@ -466,19 +466,6 @@ def update_whatsapp_status(
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 
-@cvRouter.get("/task/{task_id}", status_code=200, response_model=None)
-def get_task_status(
-    task_id: str,
-    db: Session = Depends(get_db),
-    userToken: UserToken = Depends(get_user_current)
-):
-    """
-    Retrieve the current status of a background task
-    """
-    status = thread_pool_manager.get_task_status(task_id)
-    return {"task": task_id, "status": status}
-
-
 @cvRouter.get("/companies/{company_id}/cvitae", response_model=List[CVitaeResponseDTO])
 def get_cvitae_by_company(
     company_id: int,
@@ -615,7 +602,34 @@ async def process_existing_cvs(
                 await asyncio.sleep(3)
 
     # Process all batches asynchronously
-    task_id = thread_pool_manager.submit_task(process_batches)
-    # await process_batches()
+    task_id = thread_pool_manager.submit_task(offerId, process_batches)
 
     return {"detail": "Processing existing CVitae records...", "task": task_id}
+
+
+@cvRouter.get("/task/{task_id}", status_code=200, response_model=None)
+def get_task_status(
+    task_id: str,
+    db: Session = Depends(get_db),
+    userToken: UserToken = Depends(get_user_current)
+):
+    """
+    Retrieve the current status of a background task
+    """
+    status = thread_pool_manager.get_task_status(task_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="Task not found.")
+    return status
+
+
+@cvRouter.get("/task", status_code=200, response_model=None)
+def get_tasks(
+    task_id: str,
+    db: Session = Depends(get_db),
+    userToken: UserToken = Depends(get_user_current)
+):
+    """
+    Retrieve the current status of a background task
+    """
+    status_list = thread_pool_manager.get_tasks()
+    return status_list
