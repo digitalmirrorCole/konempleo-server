@@ -468,7 +468,7 @@ def update_whatsapp_status(
 
 @cvRouter.get("/task/{task_id}", status_code=200, response_model=None)
 def get_task_status(
-    task_id: int,
+    task_id: str,
     db: Session = Depends(get_db),
     userToken: UserToken = Depends(get_user_current)
 ):
