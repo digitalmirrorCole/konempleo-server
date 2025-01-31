@@ -296,14 +296,39 @@ def analyze_and_update_vitae_offers(
             messages=messages,
             temperature=0
         )
-        raw_response = response.choices[0].message.content.strip()
-
-        # Parse GPT response
-        try:
-            response_json = json.loads(raw_response)
-        except json.JSONDecodeError as e:
-            print(f"JSON parsing error: {e}, Raw response: {raw_response}")
-            raise HTTPException(status_code=500, detail="Failed to parse GPT response.")
+        raw_response = None
+        base_delay = 0.5
+        max_retries = 3
+        for attempt in range(max_retries):  # Iterate max retries
+            try:
+                response = openai.chat.completions.create(
+                    model="gpt-3.5-turbo-16k",
+                    messages=messages,
+                    temperature=0
+                )
+                raw_response = response.choices[0].message.content.strip()
+                response_json = json.loads(raw_response)
+            except openai.error.RateLimitError:
+                if attempt >= max_retries:
+                    return
+                else:
+                    wait_time = base_delay * (2 ** attempt)  # Exponential backoff
+                    print(f"RateLimit hit. Retrying in {wait_time:.2f} seconds...")
+                    time.sleep(wait_time)
+            except openai.error.InvalidRequestError as e:
+                print(f"Invalid Request Error: {e}")
+                print(f"Response Body: {e.response.json()}")  # Log the body
+                return
+            except json.JSONDecodeError as e:
+                if attempt >= max_retries:
+                    return
+                else:
+                    print(f"JSON parsing error: {e}, Raw response: {raw_response}")
+                    wait_time = base_delay * (2 ** attempt)  # Exponential backoff
+                    print(f"Rate limit hit. Retrying in {wait_time:.2f} seconds...")
+                    time.sleep(wait_time)
+            except Exception as e:
+                print(f"Unhandled Error: {e}")
 
         candidates = response_json.get("candidatos", [])
         valid_cvitae = []

@@ -90,7 +90,7 @@ async def upload_cvs(
         """
         for batch in file_batches:
             await process_files(batch)  # Process the current batch
-            await asyncio.sleep(3)  # Add a 2-second delay before the next batch
+            # await asyncio.sleep(3)  # Add a 2-second delay before the next batch
 
     # Process all batches with delay
     task_id = thread_pool_manager.submit_task(offerId,
@@ -599,7 +599,7 @@ async def process_existing_cvs(
                     experience_offer
                 )
                 # Add a 2-second delay before processing the next batch
-                await asyncio.sleep(3)
+                # await asyncio.sleep(3)
 
     # Process all batches asynchronously
     task_id = thread_pool_manager.submit_task(offerId, process_batches)
