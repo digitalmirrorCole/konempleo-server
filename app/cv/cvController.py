@@ -9,7 +9,7 @@ from db.session import SessionLocal
 
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_user_current
-from app.cv.cvService import fetch_background_check_result, get_token, process_batch, process_existing_vitae_records
+from app.cv.cvService import fetch_background_check_result, get_token, analyze_and_update_vitae_offers, process_existing_vitae_records, process_file_text
 from app.cv.vitaeOfferDTO import CVitaeResponseDTO, CampaignRequestDTO, UpdateVitaeOfferStatusDTO, VitaeOfferResponseDTO
 from app.deps import get_db
 from models.models import Cargo, Company, Offer, CVitae, OfferSkill, Skill, UserEnum, VitaeOffer
@@ -77,11 +77,14 @@ async def upload_cvs(
     # Process all batches with delay
     tasks = []
     for batch in file_batches:
+        results = process_file_text(batch, companyId, company_name, db)
         tasks.append(
-            thread_pool_manager.submit_task(offerId, process_batch, batch,
-                                            companyId, company_name, offerId,
-                                            skills_list, city_offer, age_offer,
-                                            genre_offer, experience_offer, db))
+            thread_pool_manager.submit_task(offerId,
+                                            analyze_and_update_vitae_offers,
+                                            results["texts"], skills_list,
+                                            city_offer, age_offer, genre_offer,
+                                            experience_offer, db, offerId,
+                                            results["cvitae_records"]))
 
     return {"detail": "Processing files", "tasks": tasks}
 

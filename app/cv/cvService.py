@@ -115,29 +115,25 @@ def clean_symbols(text):
   return re.sub(r'[^a-záéíóúA-Z0-9\s]', '', text)
 
 
-def process_batch(
+def process_file_text(
     batch: List[UploadFile],
     companyId: int,
     company_name: str,  # Add company_name as a parameter
-    offerId: int,
-    skills_list: List[str],
-    city_offer: str,
-    age_offer: str,
-    genre_offer: str,
-    experience_offer: int,
     db: Session
 ):
     try:
+        result = {}
         cv_texts = []
         temp_cvitae_records = []
 
         # Extract text from each CV, upload to S3, and save temporary CVitae records
         for file in batch:
-            file_extension = file["extension"]
-            file_name = file["name"]
+            file_extension = file
+            file_name = file.filename
 
             # Read the file content and reset pointer
-            file_content = file["content"]
+            file_content = file.file.read()
+            file.file.seek(0)
 
             # Extract text based on file type
             if file_extension == 'pdf':
@@ -151,7 +147,7 @@ def process_batch(
 
             # Upload file to S3
             s3_key = f"{company_name}/cvs/{file_name}"
-            s3_url = upload_to_s3(file["file"], s3_key)
+            s3_url = upload_to_s3(file, s3_key)
 
             # Create a temporary CVitae record with the S3 URL
             temp_cvitae = CVitae(
@@ -161,12 +157,9 @@ def process_batch(
                 cvtext=cv_text,
             )
             temp_cvitae_records.append(temp_cvitae)
-
-        # Analyze CVs with GPT and create final records
-        analyze_and_update_vitae_offers(
-            cv_texts, skills_list, city_offer, age_offer, genre_offer, experience_offer, db, offerId, temp_cvitae_records
-        )
-
+        result["texts"] = cv_texts
+        result["cvitae_records"] = temp_cvitae_records
+        return result
     except Exception as e:
         db.rollback()
         print(f"Error processing batch: {str(e)}")
