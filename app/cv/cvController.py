@@ -63,40 +63,16 @@ async def upload_cvs(
     # Split files into batches
     file_batches = [files[i:i + 5] for i in range(0, len(files), 5)]
 
-    async def process_files(batch):
-        """
-        Process a batch of files asynchronously.
-        """
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor() as executor:
-            await loop.run_in_executor(
-                executor,
-                process_batch,
-                batch,
-                companyId,
-                company_name,
-                offerId,
-                skills_list,
-                city_offer,
-                age_offer,
-                genre_offer,
-                experience_offer,
-                db
-            )
-
-    async def process_batches_with_delay():
-        """
-        Asynchronously process all batches with a delay between each batch.
-        """
-        for batch in file_batches:
-            await process_files(batch)  # Process the current batch
-            # await asyncio.sleep(3)  # Add a 2-second delay before the next batch
-
     # Process all batches with delay
-    task_id = thread_pool_manager.submit_task(offerId,
-                                              process_batches_with_delay)
+    tasks = []
+    for batch in file_batches:
+        tasks.append(
+            thread_pool_manager.submit_task(offerId, process_batch, batch,
+                                            companyId, company_name, offerId,
+                                            skills_list, city_offer, age_offer,
+                                            genre_offer, experience_offer, db))
 
-    return {"detail": "Processing files", "task": task_id}
+    return {"detail": "Processing files", "tasks": tasks}
 
 
 
@@ -562,7 +538,8 @@ async def process_existing_cvs(
         finally:
             db.close()
 
-    def process_batch(batch, offerId, skills_list, city_offer, age_offer, genre_offer, experience_offer):
+    def process_batch(batch, offerId, skills_list, city_offer, age_offer,
+                      genre_offer, experience_offer):
         """
         Process a single batch of CVitae records in a thread-safe manner.
         """
@@ -579,30 +556,11 @@ async def process_existing_cvs(
                 db=db
             )
 
-    async def process_batches():
-        """
-        Asynchronously process all batches using multithreading with delays.
-        """
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor() as executor:
-            for batch in batches:
-                # Process the current batch
-                await loop.run_in_executor(
-                    executor,
-                    process_batch,
-                    batch,
-                    offerId,
-                    skills_list,
-                    city_offer,
-                    age_offer,
-                    genre_offer,
-                    experience_offer
-                )
-                # Add a 2-second delay before processing the next batch
-                # await asyncio.sleep(3)
-
     # Process all batches asynchronously
-    task_id = thread_pool_manager.submit_task(offerId, process_batches)
+    task_id = thread_pool_manager.submit_task(offerId, process_batch,
+                                              cvitae_ids, offerId, skills_list,
+                                              city_offer, age_offer,
+                                              genre_offer, experience_offer)
 
     return {"detail": "Processing existing CVitae records...", "task": task_id}
 
