@@ -26,11 +26,11 @@ class Task:
         self.start_date = None
 
     def is_cleanable(self):
-        return (self.start_date is not None and
-                datetime.now() - self.start_date > timedelta(minutes=5) and
-                self.status in [Status.COMPLETED, Status.FAILED]) or \
-                (self.start_date is not None and
-                 datetime.now() - self.start_date > timedelta(minutes=60))
+        if self.start_date is not None:
+            return (datetime.now() - self.start_date > timedelta(minutes=5) and
+                    self.status in [Status.COMPLETED, Status.FAILED]) or \
+                   (datetime.now() - self.start_date > timedelta(minutes=60))
+        return False
 
     def set_status(self, status, message=None):
         self.status = status
@@ -38,7 +38,7 @@ class Task:
             self.message = message if message is not None else "Queued"
         elif status == Status.PROCESSING:
             self.message = message if message is not None else "Processing"
-            self.start_date = time.time()
+            self.start_date = datetime.now()
         elif status == Status.COMPLETED:
             self.message = message if message is not None else "Completed"
         elif status == Status.FAILED:
