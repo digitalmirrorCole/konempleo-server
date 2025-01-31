@@ -46,8 +46,8 @@ class Task:
                 self.message = message if message is not None else "Failed"
 
     def __dict__(self):
-        return {"status": self.message, "offer_id": self.offer_id,
-                "task_id": self.task_id}
+        return {"status": self.status, "message": self.message,
+                "offer_id": self.offer_id, "task_id": self.task_id}
 
 
 class ThreadPoolManager:
