@@ -555,8 +555,7 @@ async def process_existing_cvs(
         finally:
             db.close()
 
-    def process_batch(batch, offerId, skills_list, city_offer, age_offer,
-                      genre_offer, experience_offer):
+    def process_batch(batch, offerId, skills_list, city_offer, age_offer, genre_offer, experience_offer):
         """
         Process a single batch of CVitae records in a thread-safe manner.
         """
@@ -573,13 +572,33 @@ async def process_existing_cvs(
                 db=db
             )
 
-    # Process all batches asynchronously
-    task_id = thread_pool_manager.submit_task(offerId, process_batch,
-                                              cvitae_ids, offerId, skills_list,
-                                              city_offer, age_offer,
-                                              genre_offer, experience_offer)
+    async def process_batches():
+        """
+        Asynchronously process all batches using multithreading with delays.
+        """
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            for batch in batches:
+                # Process the current batch
+                await loop.run_in_executor(
+                    executor,
+                    process_batch,
+                    batch,
+                    offerId,
+                    skills_list,
+                    city_offer,
+                    age_offer,
+                    genre_offer,
+                    experience_offer
+                )
+                # Add a 2-second delay before processing the next batch
+                await asyncio.sleep(3)
 
-    return {"detail": "Processing existing CVitae records...", "task": task_id}
+    # Process all batches asynchronously
+    #await process_batches()
+    task_id = thread_pool_manager.submit_task(process_batches)
+
+    return {"detail": "Processing existing CVitae records...", "tasks": [task_id]}
 
 
 @cvRouter.get("/task/{task_id}", status_code=200, response_model=None)
