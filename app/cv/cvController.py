@@ -9,7 +9,9 @@ from db.session import SessionLocal
 
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_user_current
-from app.cv.cvService import fetch_background_check_result, get_token, analyze_and_update_vitae_offers, process_existing_vitae_records, process_file_text
+from app.cv.cvService import fetch_background_check_result, get_token, \
+    analyze_and_update_vitae_offers, process_existing_vitae_records, \
+    process_file_text, upload_batch
 from app.cv.vitaeOfferDTO import CVitaeResponseDTO, CampaignRequestDTO, UpdateVitaeOfferStatusDTO, VitaeOfferResponseDTO
 from app.deps import get_db
 from models.models import Cargo, Company, Offer, CVitae, OfferSkill, Skill, UserEnum, VitaeOffer
@@ -60,35 +62,26 @@ async def upload_cvs(
     genre_offer = offer.gender
     experience_offer = offer.experience_years
 
-    pfiles = []
-    for file in files:
-        fileobj = {}
-        fileobj["extension"] = file.filename.split('.')[-1].lower()
-        fileobj["name"] = file.filename
-        fileobj["content"] = file.file.read()
-        fileobj["content"] = file.file.read()
-        file.file.seek(0)
-        fileobj["file"] = file
-        pfiles.append(fileobj)
-
     # Split files into batches
-    file_batches = [pfiles[i:i + 5] for i in range(0, len(pfiles), 5)]
+    file_batches = [files[i:i + 5] for i in range(0, len(files), 5)]
 
     # Process all batches with delay
     tasks = []
     for batch in file_batches:
-        results = process_file_text(batch, companyId, company_name, db)
-        if results is None:
-            raise HTTPException(status_code=500,
-                                detail="There was an error uploading files")
+        urls = upload_batch(batch, company_name)
+        pbatch = []
+        for file in batch:
+            fileobj = {}
+            fileobj["extension"] = file.filename.split('.')[-1].lower()
+            fileobj["name"] = file.filename
+            fileobj["content"] = file.file.read()
+            pbatch.append(fileobj)
         tasks.append(
-            thread_pool_manager.submit_task(offerId,
-                                            analyze_and_update_vitae_offers,
-                                            results["texts"], skills_list,
-                                            city_offer, age_offer, genre_offer,
-                                            experience_offer, db, offerId,
-                                            results["cvitae_records"]))
-
+            thread_pool_manager.submit_task(offerId, process_file_text, pbatch,
+                                            companyId, company_name, urls, db,
+                                            skills_list, city_offer, age_offer,
+                                            genre_offer, experience_offer,
+                                            offerId))
     return {"detail": "Processing files", "tasks": tasks}
 
 

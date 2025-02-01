@@ -115,25 +115,54 @@ def clean_symbols(text):
   return re.sub(r'[^a-záéíóúA-Z0-9\s]', '', text)
 
 
-def process_file_text(
+def upload_batch(
     batch: List[UploadFile],
+    company_name: str
+):
+    urls = {}
+    for file in batch:
+        try:
+            # Read the file content and reset pointer
+            file.file.seek(0)
+            # Upload file to S3
+            s3_key = f"{company_name}/cvs/{file.filename}"
+            s3_url = upload_to_s3(file, s3_key)
+            urls[file.filename] = s3_url
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            raise HTTPException(status_code=500,
+                                detail=f"Unexpected error: {str(e)}")
+    return urls
+
+
+def process_file_text(
+    batch: List[dict],
     companyId: int,
     company_name: str,  # Add company_name as a parameter
-    db: Session
+    urls: dict,
+    db: Session,
+    skills_list,
+    city_offer,
+    age_offer,
+    genre_offer,
+    experience_offer,
+    offerId
 ):
-    try:
-        result = {}
-        cv_texts = []
-        temp_cvitae_records = []
+    cv_texts = []
+    temp_cvitae_records = []
 
-        # Extract text from each CV, upload to S3, and save temporary CVitae records
-        for file in batch:
-            file_extension = file
-            file_name = file.filename
+    # Extract text from each CV and save temporary CVitae records
+    for file in batch:
+        try:
+            # file_extension = file.filename.split('.')[-1].lower()
+            file_extension = file["extension"]
+            # file_name = file.filename
+            file_name = file["name"]
 
             # Read the file content and reset pointer
-            file_content = file.file.read()
-            file.file.seek(0)
+            # file_content = file.file.read()
+            file_content = file["content"]
 
             # Extract text based on file type
             if file_extension == 'pdf':
@@ -141,30 +170,30 @@ def process_file_text(
             elif file_extension in ['docx', 'doc']:
                 cv_text = extract_text_from_docx(file_content)
             else:
-                raise HTTPException(status_code=400, detail=f"Unsupported file format: {file_extension}")
+                raise HTTPException(status_code=400,
+                                    detail=f"Unsupported file format: {file_extension}")
 
             cv_texts.append(f"### Candidate #{len(cv_texts) + 1} ###\n{cv_text}")
 
-            # Upload file to S3
-            s3_key = f"{company_name}/cvs/{file_name}"
-            s3_url = upload_to_s3(file, s3_key)
-
             # Create a temporary CVitae record with the S3 URL
             temp_cvitae = CVitae(
-                url=s3_url,
+                url=urls[file_name],
                 companyId=companyId,
                 extension=file_extension,
                 cvtext=cv_text,
             )
             temp_cvitae_records.append(temp_cvitae)
-        result["texts"] = cv_texts
-        result["cvitae_records"] = temp_cvitae_records
-        return result
-    except Exception as e:
-        db.rollback()
-        print(f"Error processing batch: {str(e)}")
-        raise
-    return None
+        except HTTPException as e:
+            db.rollback()
+            raise e
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500,
+                                detail=f"Unexpected error: {str(e)}")
+    analyze_and_update_vitae_offers(
+        cv_texts, skills_list, city_offer, age_offer, genre_offer,
+        experience_offer, db, offerId, temp_cvitae_records
+    )
 
 
 def analyze_and_update_vitae_offers(
