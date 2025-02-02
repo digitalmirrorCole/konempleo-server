@@ -128,7 +128,6 @@ def upload_batch(
             # Upload file to S3
             s3_key = f"{company_name}/cvs/{file_name}"
             urls[file_name] = upload_to_s3(file["file"], s3_key)
-            file["file"].file.seek(0)
     except Exception as e:
         print(f"Error processing batch: {str(e)}")
         raise e
@@ -198,7 +197,7 @@ def parse_prompt(
     full_prompt = prompt.format(city_offer=city_offer, age_offer=age_offer,
                                 genre_offer=genre_offer,
                                 experience_offer=experience_offer,
-                                skill_list_str=skills_list_str,
+                                skills_list_str=skills_list_str,
                                 cv_texts=cv_texts)
 
     # Send the request to GPT
@@ -209,30 +208,33 @@ def parse_prompt(
     raw_response = None
     response_json = None
 
-    def try_to_query():
-        global raw_response, response_json, messages
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo-16k",
-            messages=messages,
-            temperature=0
-        )
-        raw_response = response.choices[0].message.content.strip()
-        response_json = json.loads(raw_response)
     try:
-        response_json = try_to_query()
+        def try_to_query(messages):
+            global raw_response, response_json
+            response = openai.chat.completions.create(
+                model="gpt-3.5-turbo-16k",
+                messages=messages,
+                temperature=0
+            )
+            raw_response = response.choices[0].message.content.strip()
+            response_json = json.loads(raw_response)
+            return response_json
+
+        response_json = try_to_query(messages)
     except openai.RateLimitError:
         print("RateLimit hit. Retrying in 5 seconds...")
         time.sleep(5)
-        try_to_query()
+        response_json = try_to_query(messages)
     except openai.InvalidRequestError as e:
         print(f"Invalid Request Error: {e}")
         print(f"Response Body: {e.response.json()}")  # Log the body
     except json.JSONDecodeError:
-        print("RateLimit hit. Retrying in 5 seconds...")
+        print("JSON Decoding error. Retrying in 5 seconds...")
         time.sleep(5)
-        try_to_query()
+        response_json = try_to_query(messages)
     except Exception as e:
         print(f"Unhandled Error: {e}")
+
     return response_json
 
 

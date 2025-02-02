@@ -19,6 +19,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 from datetime import datetime
 from app.utils.thread_manager import ThreadPoolManager
+from uuid import uuid4
 
 cvRouter = APIRouter()
 cvRouter.tags = ['CV']
@@ -64,9 +65,10 @@ async def upload_cvs(
 
     pfiles = []
     for file in files:
+        uname = str(uuid4())
         fileobj = {}
         fileobj["extension"] = file.filename.split('.')[-1].lower()
-        fileobj["name"] = file.filename
+        fileobj["name"] = f"{uname}.{fileobj['extension']}"
         fileobj["content"] = file.file.read()
         file.file.seek(0)
         fileobj["file"] = file
