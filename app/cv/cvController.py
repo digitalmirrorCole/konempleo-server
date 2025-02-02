@@ -1,5 +1,5 @@
 import asyncio
-from concurrent.futures import ThreadPoolExecutor 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import os
 from typing import List, Optional
@@ -9,7 +9,9 @@ from db.session import SessionLocal
 
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_user_current
-from app.cv.cvService import fetch_background_check_result, get_token, analyze_and_update_vitae_offers, process_existing_vitae_records, process_file_text
+from app.cv.cvService import fetch_background_check_result, get_token, \
+    analyze_and_update_vitae_offers, process_existing_vitae_records, \
+    process_file_text, upload_batch
 from app.cv.vitaeOfferDTO import CVitaeResponseDTO, CampaignRequestDTO, UpdateVitaeOfferStatusDTO, VitaeOfferResponseDTO
 from app.deps import get_db
 from models.models import Cargo, Company, Offer, CVitae, OfferSkill, Skill, UserEnum, VitaeOffer
@@ -20,7 +22,7 @@ from app.utils.thread_manager import ThreadPoolManager
 
 cvRouter = APIRouter()
 cvRouter.tags = ['CV']
-thread_pool_manager = ThreadPoolManager(max_workers=5)
+thread_pool_manager = ThreadPoolManager(max_workers=1)
 
 @cvRouter.post("/offers/upload-cvs/", status_code=201, response_model=None)
 async def upload_cvs(
@@ -66,7 +68,6 @@ async def upload_cvs(
         fileobj["extension"] = file.filename.split('.')[-1].lower()
         fileobj["name"] = file.filename
         fileobj["content"] = file.file.read()
-        fileobj["content"] = file.file.read()
         file.file.seek(0)
         fileobj["file"] = file
         pfiles.append(fileobj)
@@ -77,17 +78,17 @@ async def upload_cvs(
     # Process all batches with delay
     tasks = []
     for batch in file_batches:
-        results = process_file_text(batch, companyId, company_name, db)
-        if results is None:
+        urls = upload_batch(batch, company_name)
+        if urls is None or urls == []:
             raise HTTPException(status_code=500,
                                 detail="There was an error uploading files")
         tasks.append(
             thread_pool_manager.submit_task(offerId,
-                                            analyze_and_update_vitae_offers,
-                                            results["texts"], skills_list,
-                                            city_offer, age_offer, genre_offer,
-                                            experience_offer, db, offerId,
-                                            results["cvitae_records"]))
+                                            process_file_text,
+                                            batch, companyId, company_name,
+                                            db, urls, skills_list, city_offer,
+                                            age_offer, genre_offer,
+                                            experience_offer, offerId))
 
     return {"detail": "Processing files", "tasks": tasks}
 
@@ -195,7 +196,7 @@ def get_cvoffers_by_offer(
         # Validate user permissions
         if userToken.role not in [UserEnum.super_admin, UserEnum.company, UserEnum.company_recruit, UserEnum.admin]:
             raise HTTPException(status_code=403, detail="You do not have permission to access this endpoint.")
-        
+
         # Validate date filters
         if start_date and close_date:
             if close_date <= start_date:
@@ -439,7 +440,7 @@ def update_whatsapp_status(
             offer = db.query(Offer).filter(Offer.id == offerId).first()
             if not offer:
                 raise HTTPException(status_code=404, detail=f"Offer with ID {offerId} not found.")
-            
+
             # Increment the interested field
             offer.interested += 1  # Since the default is 0 and not nullable, no need to check for None
 
@@ -595,10 +596,9 @@ async def process_existing_cvs(
                 await asyncio.sleep(3)
 
     # Process all batches asynchronously
-    #await process_batches()
-    task_id = thread_pool_manager.submit_task(process_batches)
+    task_id = thread_pool_manager.submit_task(offerId, process_batches)
 
-    return {"detail": "Processing existing CVitae records...", "tasks": [task_id]}
+    return {"detail": "Processing existing CVitae records...", "task": task_id}
 
 
 @cvRouter.get("/task/{task_id}", status_code=200, response_model=None)

@@ -17,8 +17,9 @@ import fitz
 import requests
 from requests.auth import HTTPBasicAuth
 import traceback
+from app.utils.prompt import prompt
 
-from models.models import CVitae, VitaeOffer 
+from models.models import CVitae, VitaeOffer
 
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
@@ -64,7 +65,7 @@ def delete_from_s3(url: str):
             print(f"Invalid S3 URL: {url}")
             return
         bucket_name, key = match.groups()
-        
+
         # Initialize S3 client
         s3_client = boto3.client('s3')
         s3_client.delete_object(Bucket=bucket_name, Key=key)
@@ -115,25 +116,43 @@ def clean_symbols(text):
   return re.sub(r'[^a-záéíóúA-Z0-9\s]', '', text)
 
 
+def upload_batch(
+    batch: List[dict],
+    company_name: str,  # Add company_name as a parameter
+):
+    urls = {}
+    try:
+        # Upload files to S3
+        for file in batch:
+            file_name = file["name"]
+            # Upload file to S3
+            s3_key = f"{company_name}/cvs/{file_name}"
+            urls[file_name] = upload_to_s3(file["file"], s3_key)
+            file["file"].file.seek(0)
+    except Exception as e:
+        print(f"Error processing batch: {str(e)}")
+        raise e
+    return urls
+
+
 def process_file_text(
-    batch: List[UploadFile],
+    batch: List[dict],
     companyId: int,
     company_name: str,  # Add company_name as a parameter
-    db: Session
-):
+    db: Session,
+    urls: dict,
+        skills_list, city_offer, age_offer, genre_offer, experience_offer,
+        offerId):
+    cv_texts = []
+    temp_cvitae_records = []
     try:
-        result = {}
-        cv_texts = []
-        temp_cvitae_records = []
-
-        # Extract text from each CV, upload to S3, and save temporary CVitae records
+        # Extract text from each CV, and save temporary CVitae records
         for file in batch:
-            file_extension = file
-            file_name = file.filename
+            file_extension = file["extension"]
+            file_name = file["name"]
 
             # Read the file content and reset pointer
-            file_content = file.file.read()
-            file.file.seek(0)
+            file_content = file["content"]
 
             # Extract text based on file type
             if file_extension == 'pdf':
@@ -145,26 +164,76 @@ def process_file_text(
 
             cv_texts.append(f"### Candidate #{len(cv_texts) + 1} ###\n{cv_text}")
 
-            # Upload file to S3
-            s3_key = f"{company_name}/cvs/{file_name}"
-            s3_url = upload_to_s3(file, s3_key)
-
             # Create a temporary CVitae record with the S3 URL
             temp_cvitae = CVitae(
-                url=s3_url,
+                url=urls[file_name],
                 companyId=companyId,
                 extension=file_extension,
                 cvtext=cv_text,
             )
             temp_cvitae_records.append(temp_cvitae)
-        result["texts"] = cv_texts
-        result["cvitae_records"] = temp_cvitae_records
-        return result
+        db.commit()
     except Exception as e:
         db.rollback()
         print(f"Error processing batch: {str(e)}")
-        raise
-    return None
+        raise e
+    try:
+        analyze_and_update_vitae_offers(cv_texts, skills_list, city_offer,
+                                        age_offer, genre_offer,
+                                        experience_offer, db, offerId,
+                                        temp_cvitae_records)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error processing texts: {str(e)}")
+
+
+def parse_prompt(
+        cv_texts: List[str],
+        skills_list: List[str],
+        city_offer: str,
+        age_offer: str,
+        genre_offer: str,
+        experience_offer: int,
+):
+    skills_list_str = ", ".join(skills_list)
+    full_prompt = prompt.format(city_offer=city_offer, age_offer=age_offer,
+                                genre_offer=genre_offer,
+                                experience_offer=experience_offer,
+                                skill_list_str=skills_list_str,
+                                cv_texts=cv_texts)
+
+    # Send the request to GPT
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": full_prompt}
+    ]
+    raw_response = None
+    response_json = None
+
+    def try_to_query():
+        global raw_response, response_json, messages
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo-16k",
+            messages=messages,
+            temperature=0
+        )
+        raw_response = response.choices[0].message.content.strip()
+        response_json = json.loads(raw_response)
+    try:
+        response_json = try_to_query()
+    except openai.RateLimitError:
+        print("RateLimit hit. Retrying in 5 seconds...")
+        time.sleep(5)
+        try_to_query()
+    except openai.InvalidRequestError as e:
+        print(f"Invalid Request Error: {e}")
+        print(f"Response Body: {e.response.json()}")  # Log the body
+    except json.JSONDecodeError:
+        print("RateLimit hit. Retrying in 5 seconds...")
+        time.sleep(5)
+        try_to_query()
+    except Exception as e:
+        print(f"Unhandled Error: {e}")
+    return response_json
 
 
 def analyze_and_update_vitae_offers(
@@ -179,150 +248,12 @@ def analyze_and_update_vitae_offers(
     cvitae_records: List[CVitae]
 ):
     try:
-        # Prepare the GPT prompt
-        skills_list_str = ", ".join(skills_list)
-        full_prompt = f"""
-        Actúa como un experto en [Reclutamiento, Selección de Personal, Análisis de
-        Hojas de Vida]. El objetivo de este super prompt es evaluar y calificar las hojas de
-        vida de candidatos con base en una serie de criterios predefinidos. El sistema
-        debe identificar las habilidades del candidato y compararlas con las solicitadas,
-        calcular un puntaje general basado en diversos factores (habilidades, experiencia,
-        tiempo promedio en cada cargo, nivel educativo, entre otros), y finalmente
-        entregar un JSON con todos los datos recolectados del candidato.
-
-        Variables Obligatorias:
-        Se deben recibir y validar las siguientes variables de la oferta inicial. Si el
-        candidato no cumple con alguna de estas cuatro variables (Ciudad, Edad,
-        Género, Experiencia), será descartado automáticamente y su estado se
-        marcará como “No apto” en el campo Status:
-        1. Ciudad (City): Ciudad requerida para que el candidato sea considerado = {city_offer}
-        2. Edad (Age): Rango de edad requerido para el candidato = {age_offer}
-        3. Género (Genre): Género requerido según los lineamientos de la oferta = {genre_offer}
-        4. Experiencia (Experience): Experiencia laboral mínima requerida (en años) = {experience_offer}
-
-        Comparación de Variables Obligatorias:
-        Estas comparaciones se deben realizar en el siguiente orden:
-        1. Ciudad: Comparar la ciudad de residencia extraída del candidato con
-        la ciudad especificada en la oferta. Si no coinciden, el candidato se marcará como
-        “No apto”.
-        2. Edad: Comparar la edad extraída del candidato con el rango de edad
-        especificado en la oferta. Si no se encuentra dentro del rango, el candidato se
-        marcará como “No apto”.
-        3. Género: Comparar el género del candidato con el género
-        especificado en la oferta. Si no coincide, el candidato se marcará como “No
-        apto”.
-        4. Experiencia: Comparar la experiencia laboral total del candidato con
-        la experiencia mínima requerida en la oferta. Si no cumple con el mínimo
-        requerido, el candidato se marcará como “No apto”.
-
-        Parámetros a Extraer:
-        1. Nombre del candidato: Extrae el nombre completo del candidato
-        desde el campo correspondiente en su hoja de vida.
-        2. Tipo de Documento: Extrae el Tipo de documento del candidato
-        3. Número de identificación (Cédula): Extrae el número de
-        identificación del candidato.
-        4. Ciudad de residencia: Extrae la ciudad donde reside el candidato y
-        compárala con la ciudad requerida en la oferta.
-        5. Edad: Extrae la edad del candidato y verifica que esté dentro del
-        rango de edad especificado en la oferta.
-        6. Género: Extrae el género del candidato y verifica que coincida con el
-        género especificado en la oferta.
-        7. Experiencia laboral: Extrae los años de experiencia del candidato y
-        verifica si cumple con la experiencia mínima requerida en la oferta.
-        8. Habilidades encontradas vs Habilidades solicitadas: Compara las
-        habilidades descritas en la hoja de vida del candidato con las habilidades
-        solicitadas en la plataforma y genera una lista de coincidencias.
-        9. Móvil (Teléfono de contacto): Extrae el número móvil del candidato.
-        10. Correo electrónico: Extrae el correo electrónico del candidato.
-        11. Score: Calcula el puntaje del candidato con base en habilidades,
-            experiencia, tiempo promedio en cada cargo, nivel educativo, género, ciudad de
-            residencia, entre otros factores.
-
-        Ecuación del Score Final:
-        Score HET:
-        - H (Habilidades): Evaluar el grado de coincidencia entre las habilidades requeridas y las habilidades del candidato (escala de 0 a 10).
-        - E (Experiencia): La experiencia laboral total en años del candidato (normalizada a una escala de 0 a 10).
-        - T (Tiempo promedio en cada trabajo): Promedio de duración en meses de cada cargo del candidato (normalizado a una escala de 0 a 10).
-
-        Habilidades Solicitadas:
-        Las habilidades solicitadas en esta oferta son las siguientes: {skills_list_str}
-
-        Ejemplo de JSON con los datos de un candidato:
-        {{
-            "nombre": "Juan Perez",
-            "cedula": "80000000",
-            "tipo_documento": "CC",
-            "ciudad": "Bogota",
-            "habilidades_encontradas": ["Habilidad1", "Habilidad2", "Habilidad3"],
-            "habilidades_solicitadas": ["Habilidad1", "Habilidad2", "Habilidad3"],
-            "genero": "Hombre",
-            "movil": "3105555555",
-            "correo": "juan@gmail.com",
-            "score": 7.8,
-            "experiencia_en_anos": 10,
-            "tiempo_promedio_en_cada_trabajo": 36,
-            "nivel_educativo": "Universitario",
-            "edad": 30,
-            "status": "Apto"
-        }}
-
-        ### Instrucciones:
-        A continuación, se presentan los textos completos de los CVs de los candidatos para evaluar. Por cada CV:
-        1. Evalúa las variables obligatorias (Ciudad, Edad, Género, Experiencia, habilidades).
-        2. **Busca explícitamente palabras o frases en el texto que indiquen habilidades técnicas o blandas.** Comparar estas habilidades extraídas con las habilidades solicitadas y llena los campos "habilidades encontradas" y "habilidades solicitadas".
-        3. Extrae la información relevante (nombre, cédula, ciudad, móvil, correo, etc.) y calcula el score final.
-        4. Devuelve un único JSON que contenga una lista de candidatos con el estado (apto/no apto) y los datos extraídos en el siguiente formato:
-
-
-
-        ### Textos de los CVs para Evaluar:
-        {cv_texts}
-            """
-
-        # Send the request to GPT
-        messages = [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": full_prompt}
-        ]
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo-16k",
-            messages=messages,
-            temperature=0
-        )
-        raw_response = None
-        base_delay = 0.5
-        max_retries = 3
-        for attempt in range(max_retries):  # Iterate max retries
-            try:
-                response = openai.chat.completions.create(
-                    model="gpt-3.5-turbo-16k",
-                    messages=messages,
-                    temperature=0
-                )
-                raw_response = response.choices[0].message.content.strip()
-                response_json = json.loads(raw_response)
-                break
-            except openai.error.RateLimitError:
-                if attempt >= max_retries:
-                    return
-                else:
-                    wait_time = base_delay * (2 ** attempt)  # Exponential backoff
-                    print(f"RateLimit hit. Retrying in {wait_time:.2f} seconds...")
-                    time.sleep(wait_time)
-            except openai.error.InvalidRequestError as e:
-                print(f"Invalid Request Error: {e}")
-                print(f"Response Body: {e.response.json()}")  # Log the body
-                return
-            except json.JSONDecodeError as e:
-                if attempt >= max_retries:
-                    return
-                else:
-                    print(f"JSON parsing error: {e}, Raw response: {raw_response}")
-                    wait_time = base_delay * (2 ** attempt)  # Exponential backoff
-                    print(f"Rate limit hit. Retrying in {wait_time:.2f} seconds...")
-                    time.sleep(wait_time)
-            except Exception as e:
-                print(f"Unhandled Error: {e}")
+        response_json = parse_prompt(cv_texts, skills_list,
+                                     city_offer, age_offer,
+                                     genre_offer, experience_offer)
+        if response_json is None:
+            print("Error processing the OpenAI response")
+            raise Exception("Error processing the OpenAI response")
 
         candidates = response_json.get("candidatos", [])
         valid_cvitae = []
@@ -376,7 +307,7 @@ def fetch_background_check_result(job_id: str, cvitae_id: int, db: Session, retr
     url_get = f"https://dash-board.tusdatos.co/api/results/{job_id}"
     tusDatosUser = os.getenv("tusDatosUser")
     tusDatosSecret = os.getenv("tusDatosSecret")
-    
+
     for attempt in range(max_retries):
         try:
             # Make the GET request to fetch the background check result
@@ -484,6 +415,7 @@ def get_token():
     except requests.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve token: {str(e)}")
 
+
 def process_existing_vitae_records(
     cvitae_ids: List[int],
     offerId: int,
@@ -507,146 +439,14 @@ def process_existing_vitae_records(
         # Prepare cv_texts for GPT processing
         cv_texts = [cv.cvtext for cv in cvitae_records]
 
+        response_json = parse_prompt(cv_texts, skills_list,
+                                     city_offer, age_offer,
+                                     genre_offer, experience_offer)
+        if response_json is None:
+            print("Error processing the OpenAI response")
+            raise Exception("Error processing the OpenAI response")
+
         # Prepare the GPT prompt
-        skills_list_str = ", ".join(skills_list)
-        full_prompt = f"""
-        Actúa como un experto en [Reclutamiento, Selección de Personal, Análisis de
-        Hojas de Vida]. El objetivo de este super prompt es evaluar y calificar las hojas de
-        vida de candidatos con base en una serie de criterios predefinidos. El sistema
-        debe identificar las habilidades del candidato y compararlas con las solicitadas,
-        calcular un puntaje general basado en diversos factores (habilidades, experiencia,
-        tiempo promedio en cada cargo, nivel educativo, entre otros), y finalmente
-        entregar un JSON con todos los datos recolectados del candidato.
-
-        Variables Obligatorias:
-        Se deben recibir y validar las siguientes variables de la oferta inicial. Si el
-        candidato no cumple con alguna de estas cuatro variables (Ciudad, Edad,
-        Género, Experiencia), será descartado automáticamente y su estado se
-        marcará como “No apto” en el campo Status:
-        1. Ciudad (City): Ciudad requerida para que el candidato sea considerado = {city_offer}
-        2. Edad (Age): Rango de edad requerido para el candidato = {age_offer}
-        3. Género (Genre): Género requerido según los lineamientos de la oferta = {genre_offer}
-        4. Experiencia (Experience): Experiencia laboral mínima requerida (en años) = {experience_offer}
-
-        Comparación de Variables Obligatorias:
-        Estas comparaciones se deben realizar en el siguiente orden:
-        1. Ciudad: Comparar la ciudad de residencia extraída del candidato con
-        la ciudad especificada en la oferta. Si no coinciden, el candidato se marcará como
-        “No apto”.
-        2. Edad: Comparar la edad extraída del candidato con el rango de edad
-        especificado en la oferta. Si no se encuentra dentro del rango, el candidato se
-        marcará como “No apto”.
-        3. Género: Comparar el género del candidato con el género
-        especificado en la oferta. Si no coincide, el candidato se marcará como “No
-        apto”.
-        4. Experiencia: Comparar la experiencia laboral total del candidato con
-        la experiencia mínima requerida en la oferta. Si no cumple con el mínimo
-        requerido, el candidato se marcará como “No apto”.
-
-        Parámetros a Extraer:
-        1. Nombre del candidato: Extrae el nombre completo del candidato
-        desde el campo correspondiente en su hoja de vida.
-        2. Tipo de Documento: Extrae el Tipo de documento del candidato
-        3. Número de identificación (Cédula): Extrae el número de
-        identificación del candidato.
-        4. Ciudad de residencia: Extrae la ciudad donde reside el candidato y
-        compárala con la ciudad requerida en la oferta.
-        5. Edad: Extrae la edad del candidato y verifica que esté dentro del
-        rango de edad especificado en la oferta.
-        6. Género: Extrae el género del candidato y verifica que coincida con el
-        género especificado en la oferta.
-        7. Experiencia laboral: Extrae los años de experiencia del candidato y
-        verifica si cumple con la experiencia mínima requerida en la oferta.
-        8. Habilidades encontradas vs Habilidades solicitadas: Compara las
-        habilidades descritas en la hoja de vida del candidato con las habilidades
-        solicitadas en la plataforma y genera una lista de coincidencias.
-        9. Móvil (Teléfono de contacto): Extrae el número móvil del candidato.
-        10. Correo electrónico: Extrae el correo electrónico del candidato.
-        11. Score: Calcula el puntaje del candidato con base en habilidades,
-            experiencia, tiempo promedio en cada cargo, nivel educativo, género, ciudad de
-            residencia, entre otros factores.
-
-        Ecuación del Score Final:
-        Score HET:
-        - H (Habilidades): Evaluar el grado de coincidencia entre las habilidades requeridas y las habilidades del candidato (escala de 0 a 10).
-        - E (Experiencia): La experiencia laboral total en años del candidato (normalizada a una escala de 0 a 10).
-        - T (Tiempo promedio en cada trabajo): Promedio de duración en meses de cada cargo del candidato (normalizado a una escala de 0 a 10).
-
-        Habilidades Solicitadas:
-        Las habilidades solicitadas en esta oferta son las siguientes: {skills_list_str}
-
-        Ejemplo de JSON con los datos de un candidato:
-        {{
-            "nombre": "Juan Perez",
-            "cedula": "80000000",
-            "tipo_documento": "CC",
-            "ciudad": "Bogota",
-            "habilidades_encontradas": ["Habilidad1", "Habilidad2", "Habilidad3"],
-            "habilidades_solicitadas": ["Habilidad1", "Habilidad2", "Habilidad3"],
-            "genero": "Hombre",
-            "movil": "3105555555",
-            "correo": "juan@gmail.com",
-            "score": 7.8,
-            "experiencia_en_anos": 10,
-            "tiempo_promedio_en_cada_trabajo": 36,
-            "nivel_educativo": "Universitario",
-            "edad": 30,
-            "status": "Apto"
-        }}
-
-        ### Instrucciones:
-        A continuación, se presentan los textos completos de los CVs de los candidatos para evaluar. Por cada CV:
-        1. Evalúa las variables obligatorias (Ciudad, Edad, Género, Experiencia, habilidades).
-        2. **Busca explícitamente palabras o frases en el texto que indiquen habilidades técnicas o blandas.** Comparar estas habilidades extraídas con las habilidades solicitadas y llena los campos "habilidades encontradas" y "habilidades solicitadas".
-        3. Extrae la información relevante (nombre, cédula, ciudad, móvil, correo, etc.) y calcula el score final.
-        4. Devuelve un único JSON que contenga una lista de candidatos con el estado (apto/no apto) y los datos extraídos en el siguiente formato:
-
-
-
-        ### Textos de los CVs para Evaluar:
-        {cv_texts}
-            """
-
-        # Send the request to GPT
-        messages = [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": full_prompt}
-        ]
-        raw_response = None
-        base_delay = 0.5
-        max_retries = 3
-        for attempt in range(max_retries):  # Iterate max retries
-            try:
-                response = openai.chat.completions.create(
-                    model="gpt-3.5-turbo-16k",
-                    messages=messages,
-                    temperature=0
-                )
-                raw_response = response.choices[0].message.content.strip()
-                response_json = json.loads(raw_response)
-                break
-            except openai.error.RateLimitError:
-                if attempt >= max_retries:
-                    return
-                else:
-                    wait_time = base_delay * (2 ** attempt)  # Exponential backoff
-                    print(f"RateLimit hit. Retrying in {wait_time:.2f} seconds...")
-                    time.sleep(wait_time)
-            except openai.error.InvalidRequestError as e:
-                print(f"Invalid Request Error: {e}")
-                print(f"Response Body: {e.response.json()}")  # Log the body
-                return
-            except json.JSONDecodeError as e:
-                if attempt >= max_retries:
-                    return
-                else:
-                    print(f"JSON parsing error: {e}, Raw response: {raw_response}")
-                    wait_time = base_delay * (2 ** attempt)  # Exponential backoff
-                    print(f"Rate limit hit. Retrying in {wait_time:.2f} seconds...")
-                    time.sleep(wait_time)
-            except Exception as e:
-                print(f"Unhandled Error: {e}")
-
         candidates = response_json.get("candidatos", [])
 
         # Process each candidate
