@@ -213,6 +213,7 @@ def get_cvoffers_by_offer(
         # Build base query
         query = db.query(
             VitaeOffer.id.label("vitae_offer_id"),
+            VitaeOffer.cvitaeId.label("cvitae_id"),
             CVitae.candidate_name,
             CVitae.url,
             CVitae.background_check,
@@ -248,6 +249,7 @@ def get_cvoffers_by_offer(
         response = [
             VitaeOfferResponseDTO(
                 vitae_offer_id=row.vitae_offer_id,
+                cvitae_id=row.cvitae_id,
                 candidate_name=row.candidate_name,
                 url=row.url,
                 background_check=row.background_check,

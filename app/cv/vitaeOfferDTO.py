@@ -5,6 +5,7 @@ from typing import List, Optional
 class VitaeOfferResponseDTO(BaseModel):
     vitae_offer_id: int
     candidate_name: Optional[str]
+    cvitae_id: int
     url: Optional[str]
     background_check: Optional[str]
     background_date: Optional[date] = None
