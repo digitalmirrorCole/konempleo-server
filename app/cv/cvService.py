@@ -351,6 +351,7 @@ def fetch_background_check_result(job_id: str, cvitae_id: int, db: Session, retr
             print(f"Final status reached for CVitae ID {cvitae_id} but no definitive hallazgo. Status: {status}")
             return
 
+        time.sleep(retry_interval)
     # If max retries are reached
     print(f"Max retries reached for job ID {job_id}. Status for CVitae ID {cvitae_id} remains incomplete.")
     with db.begin():
