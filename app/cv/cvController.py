@@ -12,7 +12,7 @@ from app.auth.authService import get_user_current
 from app.cv.cvService import fetch_background_check_result, get_token, \
     analyze_and_update_vitae_offers, process_existing_vitae_records, \
     process_file_text, upload_batch
-from app.cv.vitaeOfferDTO import CVitaeResponseDTO, CampaignRequestDTO, UpdateVitaeOfferStatusDTO, VitaeOfferResponseDTO
+from app.cv.vitaeOfferDTO import CVitaeResponseDTO, CampaignRequestDTO, UpdateVitaeOfferStatusDTO, UserResponseSchema, VitaeOfferResponseDTO
 from app.deps import get_db
 from models.models import Cargo, Company, Offer, CVitae, OfferSkill, Skill, UserEnum, VitaeOffer
 import requests
@@ -409,7 +409,7 @@ def send_campaign(
 def update_whatsapp_status(
     smartdataId: str = Query(..., description="The SmartData ID of the VitaeOffer"),
     offerId: int = Query(..., description="The Offer ID associated with the VitaeOffer"),
-    userResponse: str = Body(..., description="The user response ('interested' or 'not_interested')"),
+    request_body: UserResponseSchema = Body(..., description="User response JSON"),
     db: Session = Depends(get_db),
     userToken: UserToken = Depends(get_user_current),
 ):
@@ -432,6 +432,9 @@ def update_whatsapp_status(
         if not vitae_offer:
             raise HTTPException(status_code=404, detail="VitaeOffer record not found.")
 
+        # Extract userResponse from request body
+        userResponse = request_body.userResponse
+
         # Validate the user response
         if userResponse not in ["interested", "not_interested"]:
             raise HTTPException(status_code=400, detail="Invalid user response.")
@@ -446,7 +449,7 @@ def update_whatsapp_status(
                 raise HTTPException(status_code=404, detail=f"Offer with ID {offerId} not found.")
 
             # Increment the interested field
-            offer.interested += 1  # Since the default is 0 and not nullable, no need to check for None
+            offer.interested += 1
 
         db.commit()
         db.refresh(vitae_offer)
@@ -454,11 +457,9 @@ def update_whatsapp_status(
         return {"detail": f"WhatsApp status updated to '{userResponse}' for VitaeOffer ID {vitae_offer.id}"}
 
     except HTTPException as http_exc:
-        # Log HTTP exceptions for better context
         print(f"HTTPException: {http_exc.detail}")
         raise http_exc
     except Exception as e:
-        # Log and raise unexpected errors
         db.rollback()
         print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")

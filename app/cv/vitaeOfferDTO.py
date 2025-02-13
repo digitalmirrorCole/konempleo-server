@@ -19,6 +19,9 @@ class VitaeOfferResponseDTO(BaseModel):
     created_date: Optional[datetime]
     modified_date: Optional[datetime]
 
+class UserResponseSchema(BaseModel):
+    userResponse: str
+
 class UpdateVitaeOfferStatusDTO(BaseModel):
     status: Optional[str]  # Status is now optional
     comments: Optional[str]  # New field for comments
