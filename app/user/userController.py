@@ -1,10 +1,10 @@
 from sqlite3 import IntegrityError
 import traceback
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_password_hash, get_user_current
-from app.user.userService import userServices
+from app.user.userService import generate_temp_password, send_email_with_temp_password, userServices
 from app.user.userDTO import CompanyUserDTO, User, UserAdminCreateDTO, UserCreateDTO, UserCreateWithCompaniesResponseDTO, UserInsert, UserUpdateDTO, UserWCompanies, UserWithOfferCount
 from sqlalchemy.orm import Session
 from app import deps
@@ -21,47 +21,43 @@ userRouter.tags = ['User']
 def create_user(
     *,
     user_in: UserAdminCreateDTO, 
-    company_ids: Optional[List[int]] = None,  # Optional list of company IDs
+    company_ids: Optional[List[int]] = None,  
     db: Session = Depends(deps.get_db), 
     userToken: UserToken = Depends(get_user_current)
 ) -> dict:
     """
     Create a new admin user in the database and optionally assign to companies.
     """  
-    # Authorization check
     if userToken.role != UserEnum.super_admin:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
     
-    # Role validation
     if user_in.role not in [UserEnum.super_admin, UserEnum.admin]:
         raise HTTPException(status_code=400, detail="The user role must be either super_admin or admin.")
     
     try:
-        # Step 1: Create the user
+        # Generate a random temp password
+        temp_password = generate_temp_password()
+        hashed_password = get_password_hash(temp_password)
+
         user = userServices.create(
             db=db, 
             obj_in=UserInsert(**{
                 'fullname': user_in.fullname,
                 'email': user_in.email,
-                'password': get_password_hash('deeptalent'),
+                'password': hashed_password,
                 'role': user_in.role,
             })
         )
 
-        associated_company_names = []  # To store associated company names
+        associated_company_names = []
 
-        # Step 2: Validate company IDs and create CompanyUser records
         if company_ids:
-            # Fetch existing companies from the DB
             existing_companies = db.query(Company).filter(Company.id.in_(company_ids)).all()
             existing_company_ids = {company.id for company in existing_companies}
-
-            # Check for invalid company IDs
             invalid_ids = set(company_ids) - existing_company_ids
             if invalid_ids:
                 raise HTTPException(status_code=404, detail=f"Companies with IDs {list(invalid_ids)} not found.")
 
-            # Create and save CompanyUser records explicitly
             for company in existing_companies:
                 company_user = CompanyUser(
                     companyId=company.id,
@@ -70,10 +66,11 @@ def create_user(
                 db.add(company_user)
                 associated_company_names.append(company.name)
 
-        db.commit()  # Commit the transaction after successful processing
-        db.refresh(user)  # Refresh user instance to ensure it's up to date
+        db.commit()
+        db.refresh(user)
 
-        # Return user details along with associated company names
+        send_email_with_temp_password(user.email, temp_password)
+
         return UserCreateWithCompaniesResponseDTO(
             id=user.id,
             fullname=user.fullname,
@@ -267,20 +264,19 @@ def get_users(
     *, db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
 ) -> List[UserWCompanies]:
     """
-    Gets users in the database along with the IDs and names of the companies they are related to,
-    filtering out users and companies with is_deleted set to true.
+    Gets users along with the IDs and names of the companies they are related to,
+    filtering out users and companies with is_deleted set to true and ordering by created_at.
     """
     if userToken.role not in [UserEnum.super_admin, UserEnum.admin]:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
     
     try:
-        # Query users along with related companies, including users with no associated companies
         users_with_companies = db.query(
             Users,
             func.coalesce(
                 func.array_agg(
                     func.json_build_object("id", Company.id, "name", Company.name)
-                ).filter(Company.is_deleted == False),  # Exclude deleted companies
+                ).filter(Company.is_deleted == False),
                 []
             ).label("companies")
         ).outerjoin(
@@ -288,15 +284,14 @@ def get_users(
         ).outerjoin(
             Company, Company.id == CompanyUser.companyId
         ).filter(
-            Users.is_deleted == False  # Exclude users with is_deleted = true
+            Users.is_deleted == False
         ).group_by(
             Users.id
-        ).all()
+        ).order_by(Users.created_at) \
+        .all()
         
-        # Format the response
         result = []
         for user, companies in users_with_companies:
-            # Convert each company JSON object to CompanyUserDTO
             formatted_companies = [
                 CompanyUserDTO(**company) for company in companies if company and company.get("id") is not None
             ]
@@ -310,6 +305,7 @@ def get_users(
                     is_deleted=user.is_deleted,
                     suspended=user.suspended,
                     phone=user.phone,
+                    created_at=user.created_at,  # Pass created_at value
                     companies=formatted_companies
                 )
             )
@@ -328,14 +324,12 @@ def get_users_by_company(
 ) -> List[UserWithOfferCount]:
     """
     Get all users associated with a given company, excluding deleted users and companies,
-    along with the count of offers owned by each user.
+    along with the count of offers owned by each user, ordered by created_at.
     """
-    # Check if the requesting user has the required permissions
     if userToken.role not in [UserEnum.super_admin, UserEnum.company]:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
 
     try:
-        # Query to get all users related to the given company, filtering for non-deleted records
         users_with_offer_count = db.query(
             Users,
             func.count(OfferModel.id).filter(OfferModel.offer_owner == Users.id).label("offer_count")
@@ -344,19 +338,19 @@ def get_users_by_company(
         ).join(
             Company, Company.id == CompanyUser.companyId
         ).outerjoin(
-            OfferModel, OfferModel.offer_owner == Users.id  # Left join to count offers owned by the user
+            OfferModel, OfferModel.offer_owner == Users.id
         ).filter(
             CompanyUser.companyId == company_id,
-            Users.is_deleted == False,  # Exclude deleted users
-            Company.is_deleted == False  # Exclude deleted companies
+            Users.is_deleted == False,
+            Company.is_deleted == False
         ).group_by(
             Users.id
-        ).all()
+        ).order_by(Users.created_at) \
+        .all()
 
         if not users_with_offer_count:
             raise HTTPException(status_code=404, detail=f"No users found for company ID: {company_id}")
 
-        # Format the result
         result = [
             UserWithOfferCount(
                 id=user.id,
@@ -366,6 +360,7 @@ def get_users_by_company(
                 active=user.active,
                 is_deleted=user.is_deleted,
                 phone=user.phone,
+                created_at=user.created_at,
                 offer_count=offer_count
             )
             for user, offer_count in users_with_offer_count

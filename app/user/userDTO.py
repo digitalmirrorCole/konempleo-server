@@ -16,6 +16,7 @@ class UserBase(BaseModel):
     active: bool
     is_deleted: bool
     phone: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 class UserAdminCreateDTO(BaseModel):
     fullname: str
