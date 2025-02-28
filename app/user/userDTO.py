@@ -18,6 +18,9 @@ class UserBase(BaseModel):
     phone: Optional[str] = None
     created_at: Optional[datetime] = None
 
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+
 class UserAdminCreateDTO(BaseModel):
     fullname: str
     email: EmailStr

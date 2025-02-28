@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from app.auth.authDTO import UserToken
 from app.auth.authService import get_password_hash, get_user_current
-from app.user.userService import generate_temp_password, send_email_with_temp_password, userServices
-from app.user.userDTO import CompanyUserDTO, User, UserAdminCreateDTO, UserCreateDTO, UserCreateWithCompaniesResponseDTO, UserInsert, UserUpdateDTO, UserWCompanies, UserWithOfferCount
+from app.user.userService import generate_temp_password, send_email_with_temp_password, send_email_with_temp_resetpassword, userServices
+from app.user.userDTO import CompanyUserDTO, ResetPasswordRequest, User, UserAdminCreateDTO, UserCreateDTO, UserCreateWithCompaniesResponseDTO, UserInsert, UserUpdateDTO, UserWCompanies, UserWithOfferCount
 from sqlalchemy.orm import Session
 from app import deps
 from typing import List, Optional
@@ -99,20 +99,24 @@ def create_user(
     userToken: UserToken = Depends(get_user_current)
 ) -> dict:
     """
-    Create a new user in the database and optionally assign to a company.
+    Create a new user with the role of 'company_recruit' and optionally assign to a company.
+    Sends a temporary password via email.
     """  
     # Authorization check: Only 'company' role can create users
     if userToken.role != UserEnum.company:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
 
     try:
+        temp_password = generate_temp_password()
+        hashed_password = get_password_hash(temp_password)
+
         # Step 1: Create the user
         user = userServices.create(
             db=db, 
             obj_in=UserInsert(**{
                 'fullname': user_in.fullname,
                 'email': user_in.email,
-                'password': get_password_hash('deeptalent'),
+                'password': hashed_password,
                 'role': UserEnum.company_recruit,
             })
         )
@@ -132,6 +136,8 @@ def create_user(
             db.add(company_user)
 
         db.commit()  # Commit transaction after all operations succeed
+
+        send_email_with_temp_password(user.email, temp_password)
 
         return {"detail": "User created successfully."}
 
@@ -482,3 +488,35 @@ def get_user_by_id(
     except Exception as e:
         print(f"Error occurred in get_user_by_id function: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching the user information")
+
+@userRouter.post("/user/reset-password", status_code=200, response_model=dict)
+def reset_password(
+    request: ResetPasswordRequest,
+    db: Session = Depends(deps.get_db),
+) -> dict:
+    """
+    Reset a user's password by generating a temporary password and marking 
+    must_change_password as True. Sends the temporary password via email.
+    """
+    user = db.query(Users).filter(Users.email == request.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="No user found for the given email.")
+
+    try:
+        temp_password = generate_temp_password()
+        hashed_password = get_password_hash(temp_password)
+
+        user.password = hashed_password
+        user.must_change_password = True
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        send_email_with_temp_resetpassword(user.email, temp_password)
+
+        return {"detail": "Temporary password has been sent to the provided email."}
+
+    except Exception as e:
+        db.rollback()
+        print(f"Error occurred in reset_password function: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while resetting the password.")

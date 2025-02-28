@@ -10,9 +10,9 @@ from app.company.companyDTO import Company, CompanyCreate, CompanyInDBBaseWCount
 from sqlalchemy.orm import Session
 from app.company.companyService import upload_picture_to_s3
 from app import deps
+from app.user.userService import generate_temp_password, send_email_with_temp_password
 from models.models import CVitae, CompanyOffer, CompanyUser, Offer, UserEnum, Users
 from models.models import Company as CompanyModel
-import traceback
 
 companyRouter = APIRouter()
 companyRouter.tags = ['Company']
@@ -29,9 +29,9 @@ def create_company(
     db: Session = Depends(deps.get_db), userToken: UserToken = Depends(get_user_current)
 ) -> dict:
     """
-    Create a new company in the database.
+    Create a new company in the database and also create a responsible user with type 3 (company).
+    Sends an email with a temporary password.
     """
-
     company_create = json.loads(company_in)  # Parse the form-data string into a dictionary
     company_in = CompanyCreate(**company_create)
 
@@ -41,21 +41,25 @@ def create_company(
     activeState = userToken.role == UserEnum.super_admin
 
     try:
-        # Step 1: Insert user (responsible_user)
+        # Step 1: Generate a temporary password for the responsible user
+        temp_password = generate_temp_password()
+        hashed_password = get_password_hash(temp_password)
+
+        # Step 2: Insert responsible_user
         user = Users(
             fullname=company_in.responsible_user.fullname,
             email=company_in.responsible_user.email,
-            password=get_password_hash('deeptalentUser'),
+            password=hashed_password,  # Store the hashed password
             phone=company_in.responsible_user.phone,
             role=3  # Assuming this is the "company" user role
         )
         db.add(user)
         db.flush()
 
-        # Step 2: Validate konempleo_responsible
+        # Step 3: Validate konempleo_responsible
         konempleo_user = db.query(Users).filter(Users.id == company_in.konempleo_responsible).first()
 
-        # Step 3: Prepare and insert company data
+        # Step 4: Prepare and insert company data
         company_data = company_in.dict()
 
         # Remove unnecessary fields from the company data
@@ -69,7 +73,7 @@ def create_company(
         db.add(company)
         db.flush()
 
-        # Step 4: Insert company-user relationships
+        # Step 5: Insert company-user relationships
         company_user = CompanyUser(
             companyId=company.id,
             userId=user.id
@@ -81,11 +85,11 @@ def create_company(
         db.add(company_user)
         db.add(konempleo_user)
 
-        # Step 5: Commit the database transaction first
+        # Step 6: Commit the database transaction first
         db.commit()
         db.refresh(company)
 
-        # Step 6: Upload picture to S3 after database transaction is successful
+        # Step 7: Upload picture to S3 after database transaction is successful
         if picture:
             try:
                 picture_url = upload_picture_to_s3(picture, company_in.name)
@@ -93,6 +97,9 @@ def create_company(
                 db.commit()  # Commit the update to store the picture URL
             except Exception as e:
                 print(f"Warning: Failed to upload picture to S3. Reason: {str(e)}")
+
+        # Step 8: Send temporary password email to the responsible user
+        send_email_with_temp_password(user.email, temp_password)
 
         return company
 
@@ -111,6 +118,7 @@ def update_company(
 ) -> dict:
     """
     Update a company in the database.
+    If a new responsible user is created, a temporary password is sent via email.
     """
 
     # Check if the user has sufficient permissions
@@ -123,10 +131,14 @@ def update_company(
         raise HTTPException(status_code=404, detail="Company not found")
 
     # Update company fields
+    fields_to_update = ['name', 'address', 'phone', 'website', 'description', 'active']  # Add more fields as needed
     for field in fields_to_update:
         value = getattr(company_in, field, None)
         if value is not None:
             setattr(company, field, value)
+
+    # Variable to store the temp password (if a new user is created)
+    temp_password = None
 
     # Handle responsible_user update (role = company)
     if company_in.responsible_user:
@@ -153,10 +165,13 @@ def update_company(
 
         # Create a new responsible user if they don't already exist
         if not responsible_user:
+            temp_password = generate_temp_password()
+            hashed_password = get_password_hash(temp_password)
+
             new_user = Users(
                 fullname=company_in.responsible_user.fullname,
                 email=company_in.responsible_user.email,
-                password=get_password_hash('deeptalentUser'),
+                password=hashed_password, 
                 phone=company_in.responsible_user.phone,
                 role=UserEnum.company
             )
@@ -203,6 +218,10 @@ def update_company(
     # Commit the changes
     db.commit()
     db.refresh(company)
+
+    # Send the temporary password email if a new responsible user was created
+    if temp_password:
+        send_email_with_temp_password(responsible_user.email, temp_password)
 
     return company
 

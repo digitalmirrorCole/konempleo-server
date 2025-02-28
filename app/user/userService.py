@@ -128,3 +128,99 @@ def send_email_with_temp_password(email: str, temp_password: str):
     except (BotoCoreError, NoCredentialsError) as e:
         print(f"Failed to send email: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to send email. Please try again later.")
+
+
+def send_email_with_temp_resetpassword(email: str, temp_password: str):
+    """Sends an email using AWS SES with the temporary password."""
+    
+    # AWS SES Configuration
+    SENDER = "mail@konempleo.ai"  # Change to your verified SES sender email
+    CHARSET = "UTF-8"
+    SUBJECT = "Bienvenido a KonEmpleo - Su acceso temporal"
+
+    BODY_TEXT = f"""
+    ¡Bienvenido a KonEmpleo!
+    
+    Estimado/a,
+
+    Has solicitado reestablecer tu contraseña.
+
+    Hemos generado una contraseña temporal para usted:
+    
+    Contraseña Temporal: {temp_password}
+    
+    Haga clic en el siguiente enlace para acceder a su cuenta y actualizar su contraseña:
+    
+    https://konempleo.ai/login
+    
+    Atentamente,
+    El equipo de KonEmpleo
+    """
+
+    BODY_HTML = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Bienvenido a KonEmpleo</title>
+    </head>
+    <body>
+        <table width="100%" style="background-color: #ffffff; max-width: 600px; margin: auto;">
+            <tr>
+                <td style="text-align: center; padding: 20px;">
+                    <img src="https://konempleo.ai/_nuxt/ke_logo_dark.D8QroFYK.png" alt="KonEmpleo Logo" style="max-width: 20%; height: auto;">
+                </td>
+            </tr>
+            <tr>
+                <td style="padding: 20px; font-size: 16px; color: #333333;">
+                    <p>Estimado/a,</p>
+                    <p>Has solicitado reestablecer tu contraseña.</p>
+                    <p>Hemos generado una contraseña temporal para usted:</p>
+                    <p style="text-align: center; font-weight: bold; font-size: 18px;">{temp_password}</p>
+                    <p>Haga clic en el botón a continuación para acceder a su cuenta y actualizar su contraseña:</p>
+                    <p style="text-align: center;">
+                        <a href="https://konempleo.ai/login" style="background-color: #002E5D; color: #ffffff; padding: 12px 24px; text-decoration: none; font-size: 16px; border-radius: 5px;">Actualizar Contraseña</a>
+                    </p>
+                </td>
+            </tr>
+            <tr>
+                <td style="text-align: center; padding: 20px; background-color: #002E5D; color: #ffffff; font-size: 14px;">
+                    &copy; 2025 KonEmpleo. Todos los derechos reservados.
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """
+
+    try:
+    
+
+        # Send the email
+        response = ses_client.send_email(
+            Destination={"ToAddresses": [email]},
+            Message={
+                "Body": {
+                    "Html": {
+                        "Charset": CHARSET,
+                        "Data": BODY_HTML,
+                    },
+                    "Text": {
+                        "Charset": CHARSET,
+                        "Data": BODY_TEXT,
+                    },
+                },
+                "Subject": {
+                    "Charset": CHARSET,
+                    "Data": SUBJECT,
+                },
+            },
+            Source=SENDER,
+            ConfigurationSetName="konempleo-config-set"
+        )
+
+        print(f"Email sent successfully to {email}. Message ID: {response['MessageId']}")
+
+    except (BotoCoreError, NoCredentialsError) as e:
+        print(f"Failed to send email: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to send email. Please try again later.")
