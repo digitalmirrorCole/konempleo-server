@@ -35,6 +35,7 @@ class genderEnum(IntEnum):
     male = 1
     female = 2
     other = 3
+    indiferente = 4
 
 class militaryEnum(IntEnum):
     yes = 1

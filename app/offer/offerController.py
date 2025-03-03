@@ -172,6 +172,7 @@ def get_offers_by_company(
     Optionally filter by start_date and close_date.
     Additionally, include counts of CVitae with background_check not null,
     and use the contacted and interested fields directly from the Offer model.
+    The results are sorted from newest to oldest based on created_date.
     """
 
     if userToken.role not in [UserEnum.super_admin, UserEnum.admin, UserEnum.company]:
@@ -208,6 +209,8 @@ def get_offers_by_company(
         CompanyOffer.companyId == company_id
     ).group_by(
         OfferModel.id
+    ).order_by(
+        OfferModel.created_date.desc()
     )
 
     # Apply date filters if provided
@@ -243,6 +246,7 @@ def get_offers_by_owner(
     Get offers for a given offer owner and count the number of associated VitaeOffer records for each offer.
     Optionally filter by start_date and close_date.
     Additionally, use the contacted and interested fields directly from the Offer model.
+    The results are sorted from newest to oldest based on created_date.
     """
 
     # Ensure only super_admin or company users can access this
@@ -280,6 +284,8 @@ def get_offers_by_owner(
         OfferModel.offer_owner == current_user_id
     ).group_by(
         OfferModel.id
+    ).order_by(
+        OfferModel.created_date.desc()  # Order from newest to oldest
     )
 
     # Apply date filters if provided
