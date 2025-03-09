@@ -142,7 +142,11 @@ def update_company(
         raise HTTPException(status_code=404, detail="Company not found")
 
     # Update company fields
-    fields_to_update = ['name', 'address', 'phone', 'website', 'description', 'active']  # Add more fields as needed
+    fields_to_update = [
+        'name', 'address', 'phone', 'website', 'description', 'active',
+        'availableoffers', 'totaloffers'
+    ]
+
     for field in fields_to_update:
         value = getattr(company_in, field, None)
         if value is not None:

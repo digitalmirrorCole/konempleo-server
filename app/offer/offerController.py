@@ -43,7 +43,7 @@ def create_offer(
 
     # Check if the current active offers will exceed the total offers
     if company.availableoffers -1 < 0:
-        raise HTTPException(status_code=400, detail="Cannot create new offer. There arent any available offers for this company.") 
+        raise HTTPException(status_code=402, detail="Cannot create new offer. There arent any available offers for this company.") 
 
     # Prepare offer data
     offer_data = offer_in.dict()
