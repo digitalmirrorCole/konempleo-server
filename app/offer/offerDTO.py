@@ -48,6 +48,7 @@ class OfferWithVitaeCount(OfferBase):
     id: int
     vitae_offer_count: int
     background_check_count: int
+    cargo_name: Optional[str] = None
     start_date: Optional[datetime] = None
     close_date: Optional[datetime] = None
 

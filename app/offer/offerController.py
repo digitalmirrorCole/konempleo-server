@@ -194,9 +194,10 @@ def get_offers_by_company(
             status_code=400, detail="Both start_date and close_date must be provided together"
         )
 
-    # Base query with additional counts for background_check
+    # Base query with additional counts for background_check and cargo name
     query = db.query(
         OfferModel,
+        Cargo.name.label("cargo_name"),  # Fetch the cargo name
         func.count(VitaeOffer.id).label('vitae_offer_count'),
         func.count(func.nullif(CVitae.background_check, None)).label('background_check_count'),
     ).join(
@@ -205,10 +206,12 @@ def get_offers_by_company(
         VitaeOffer, VitaeOffer.offerId == OfferModel.id
     ).outerjoin(
         CVitae, CVitae.Id == VitaeOffer.cvitaeId
+    ).outerjoin(
+        Cargo, Cargo.id == OfferModel.cargoId  # Join with Cargo table to get name
     ).filter(
         CompanyOffer.companyId == company_id
     ).group_by(
-        OfferModel.id
+        OfferModel.id, Cargo.name  # Group by both Offer ID and Cargo Name
     ).order_by(
         OfferModel.created_date.desc()
     )
@@ -225,10 +228,11 @@ def get_offers_by_company(
 
     # Format the response using contacted and interested fields
     result = []
-    for offer, vitae_offer_count, background_check_count in offers_with_vitae_count:
+    for offer, cargo_name, vitae_offer_count, background_check_count in offers_with_vitae_count:
         offer_dict = offer.__dict__.copy()  # Convert the offer object to a dictionary
         offer_dict['vitae_offer_count'] = vitae_offer_count
         offer_dict['background_check_count'] = background_check_count
+        offer_dict['cargo_name'] = cargo_name  # Add cargo name to the response
         offer_dict['start_date'] = offer.created_date  # Add start_date to response
         offer_dict['close_date'] = offer.modified_date  # Add close_date to response
         result.append(OfferWithVitaeCount(**offer_dict))
@@ -271,19 +275,22 @@ def get_offers_by_owner(
             status_code=400, detail="Both start_date and close_date must be provided together"
         )
 
-    # Base query with additional counts for background_check
+    # Base query with additional counts for background_check and cargo name
     query = db.query(
         OfferModel,
+        Cargo.name.label("cargo_name"),  # Fetch the cargo name
         func.count(VitaeOffer.id).label("vitae_offer_count"),
         func.count(func.nullif(CVitae.background_check, None)).label("background_check_count"),
     ).outerjoin(
         VitaeOffer, VitaeOffer.offerId == OfferModel.id
     ).outerjoin(
         CVitae, CVitae.Id == VitaeOffer.cvitaeId
+    ).outerjoin(
+        Cargo, Cargo.id == OfferModel.cargoId  # Join with Cargo table to get name
     ).filter(
         OfferModel.offer_owner == current_user_id
     ).group_by(
-        OfferModel.id
+        OfferModel.id, Cargo.name  # Group by both Offer ID and Cargo Name
     ).order_by(
         OfferModel.created_date.desc()  # Order from newest to oldest
     )
@@ -300,10 +307,11 @@ def get_offers_by_owner(
 
     # Format the response using contacted and interested fields
     result = []
-    for offer, vitae_offer_count, background_check_count in offers_with_vitae_count:
+    for offer, cargo_name, vitae_offer_count, background_check_count in offers_with_vitae_count:
         offer_dict = offer.__dict__.copy()  # Convert the offer object to a dictionary
         offer_dict["vitae_offer_count"] = vitae_offer_count
         offer_dict["background_check_count"] = background_check_count
+        offer_dict["cargo_name"] = cargo_name  # Add cargo name to the response
         offer_dict["start_date"] = offer.created_date  # Add start_date to response
         offer_dict["close_date"] = offer.modified_date  # Add close_date to response
         result.append(OfferWithVitaeCount(**offer_dict))
@@ -318,32 +326,44 @@ def get_offer_by_id(
 ) -> OfferWithVitaeCount:
     """
     Get a specific offer by its ID and count the associated VitaeOffer records.
+    Additionally, retrieve the cargo name associated with the offer's cargoId.
     """
 
     # Check user permissions
     if userToken.role not in [UserEnum.super_admin, UserEnum.company]:
         raise HTTPException(status_code=403, detail="You do not have permission to view this offer.")
 
-    # Query to fetch the offer and count associated VitaeOffer records
-    offer_with_vitae_count = db.query(
+    # Query to fetch the offer and count associated VitaeOffer records along with cargo name
+    result = db.query(
         OfferModel,
-        func.count(VitaeOffer.id).label("vitae_offer_count")
+        func.coalesce(Cargo.name, None).label("cargo_name"),  # Fetch cargo name and handle NULLs
+        func.count(VitaeOffer.id).label("vitae_offer_count"),
+        func.count(func.nullif(CVitae.background_check, None)).label("background_check_count"),  # Add missing field
     ).outerjoin(
         VitaeOffer, VitaeOffer.offerId == OfferModel.id
+    ).outerjoin(
+        CVitae, CVitae.Id == VitaeOffer.cvitaeId  # Join to count background_check
+    ).outerjoin(
+        Cargo, Cargo.id == OfferModel.cargoId  # Join with Cargo table to get name
     ).filter(
         OfferModel.id == offer_id
     ).group_by(
-        OfferModel.id
+        OfferModel.id, Cargo.name  # Group by Offer ID and Cargo Name
     ).first()
 
-    if not offer_with_vitae_count:
+    if not result:
         raise HTTPException(status_code=404, detail="Offer not found")
 
     # Unpack the query result
-    offer, vitae_offer_count = offer_with_vitae_count
+    offer, cargo_name, vitae_offer_count, background_check_count = result
+
+    # Ensure cargo_name is properly handled
+    cargo_name = cargo_name if cargo_name else None  # Explicitly set None if it's an invalid value
 
     # Prepare the response
     offer_dict = offer.__dict__.copy()  # Convert the offer object to a dictionary
     offer_dict["vitae_offer_count"] = vitae_offer_count
+    offer_dict["background_check_count"] = background_check_count  # ✅ Now included
+    offer_dict["cargo_name"] = cargo_name  # Add cargo name to the response
 
     return OfferWithVitaeCount(**offer_dict)
