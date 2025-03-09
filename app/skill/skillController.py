@@ -116,3 +116,19 @@ def delete_skill(skill_id: int, db: Session = Depends(get_db)):
     # Commit the transaction.
     db.commit()
     return {"detail": "Deletion operation completed successfully."}
+
+@skillRouter.delete("/cargo-skills/{cargo_skill_id}", summary="Delete a specific cargo skill")
+def delete_cargo_skill(cargo_skill_id: int, db: Session = Depends(get_db), 
+    userToken: UserToken = Depends(get_user_current)):
+    """
+    Delete a cargo skill by its ID.
+    """
+    cargo_skill = db.query(CargoSkill).filter(CargoSkill.id == cargo_skill_id).first()
+
+    if not cargo_skill:
+        raise HTTPException(status_code=404, detail="Cargo skill not found.")
+    db.delete(cargo_skill)
+
+    db.commit()
+
+    return {"detail": "Cargo skill deleted successfully."}

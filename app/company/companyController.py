@@ -1,6 +1,7 @@
 
 import json
 import os
+import traceback
 from typing import List, Optional
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func
@@ -31,6 +32,7 @@ def create_company(
     """
     Create a new company in the database and also create a responsible user with type 3 (company).
     Sends an email with a temporary password.
+    If email sending fails, the company and user are NOT created.
     """
     company_create = json.loads(company_in)  # Parse the form-data string into a dictionary
     company_in = CompanyCreate(**company_create)
@@ -45,7 +47,7 @@ def create_company(
         temp_password = generate_temp_password()
         hashed_password = get_password_hash(temp_password)
 
-        # Step 2: Insert responsible_user
+        # Step 2: Insert responsible_user (DO NOT COMMIT YET)
         user = Users(
             fullname=company_in.responsible_user.fullname,
             email=company_in.responsible_user.email,
@@ -58,15 +60,15 @@ def create_company(
 
         # Step 3: Validate konempleo_responsible
         konempleo_user = db.query(Users).filter(Users.id == company_in.konempleo_responsible).first()
+        if not konempleo_user:
+            db.rollback()
+            raise HTTPException(status_code=404, detail="Konempleo responsible user not found.")
 
         # Step 4: Prepare and insert company data
         company_data = company_in.dict()
-
-        # Remove unnecessary fields from the company data
         company_data.pop('konempleo_responsible', None)
         company_data.pop('responsible_user', None)
 
-        # Insert the company record
         company = CompanyModel(**company_data)
         company.active = activeState
 
@@ -78,18 +80,25 @@ def create_company(
             companyId=company.id,
             userId=user.id
         )
-        konempleo_user = CompanyUser(
+        konempleo_user_relation = CompanyUser(
             companyId=company.id,
             userId=konempleo_user.id
         )
         db.add(company_user)
-        db.add(konempleo_user)
+        db.add(konempleo_user_relation)
 
-        # Step 6: Commit the database transaction first
+        # Step 6: Send the email BEFORE committing
+        try:
+            send_email_with_temp_password(user.email, temp_password)
+        except Exception as email_error:
+            db.rollback()  # Rollback user and company creation if email fails
+            raise HTTPException(status_code=500, detail=f"Failed to send email: {str(email_error)}")
+
+        # Step 7: Commit transaction ONLY if email sending was successful
         db.commit()
         db.refresh(company)
 
-        # Step 7: Upload picture to S3 after database transaction is successful
+        # Step 8: Upload picture to S3 after the company is committed
         if picture:
             try:
                 picture_url = upload_picture_to_s3(picture, company_in.name)
@@ -98,15 +107,17 @@ def create_company(
             except Exception as e:
                 print(f"Warning: Failed to upload picture to S3. Reason: {str(e)}")
 
-        # Step 8: Send temporary password email to the responsible user
-        send_email_with_temp_password(user.email, temp_password)
-
         return company
 
-    except Exception as e:
-        # If any operation fails, rollback the transaction
+    except HTTPException as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"An error occurred while creating the company: {str(e)}")
+        raise e  # Re-raise the HTTPException to return the correct response
+    
+    except Exception as e:
+        db.rollback()
+        print(f"Error occurred in create_company function: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="An error occurred while creating the company.")
 
     
 @companyRouter.put("/company/{company_id}", response_model=Company)

@@ -27,18 +27,23 @@ def create_user(
 ) -> dict:
     """
     Create a new admin user in the database and optionally assign to companies.
+    If sending the email fails, the user is NOT created.
     """  
     if userToken.role != UserEnum.super_admin:
         raise HTTPException(status_code=403, detail="No tiene los permisos para ejecutar este servicio")
     
     if user_in.role not in [UserEnum.super_admin, UserEnum.admin]:
         raise HTTPException(status_code=400, detail="The user role must be either super_admin or admin.")
-    
+
     try:
         # Generate a random temp password
         temp_password = generate_temp_password()
         hashed_password = get_password_hash(temp_password)
 
+        # Ensure phone is properly handled (if not provided, it should be None)
+        phone_number = user_in.phone if user_in.phone else None
+
+        # Step 1: Create the user (DO NOT COMMIT YET)
         user = userServices.create(
             db=db, 
             obj_in=UserInsert(**{
@@ -46,16 +51,19 @@ def create_user(
                 'email': user_in.email,
                 'password': hashed_password,
                 'role': user_in.role,
+                'phone': phone_number,  # Ensure phone is explicitly saved
             })
         )
 
         associated_company_names = []
 
+        # Step 2: Assign the user to companies (if provided)
         if company_ids:
             existing_companies = db.query(Company).filter(Company.id.in_(company_ids)).all()
             existing_company_ids = {company.id for company in existing_companies}
             invalid_ids = set(company_ids) - existing_company_ids
             if invalid_ids:
+                db.rollback()  # Rollback in case of invalid company IDs
                 raise HTTPException(status_code=404, detail=f"Companies with IDs {list(invalid_ids)} not found.")
 
             for company in existing_companies:
@@ -66,10 +74,16 @@ def create_user(
                 db.add(company_user)
                 associated_company_names.append(company.name)
 
+        # Step 3: Try sending the email BEFORE committing
+        try:
+            send_email_with_temp_password(user.email, temp_password)
+        except Exception as email_error:
+            db.rollback()  # Rollback user creation if email sending fails
+            raise HTTPException(status_code=500, detail=f"Failed to send email: {str(email_error)}")
+
+        # Step 4: Now commit everything if email was sent successfully
         db.commit()
         db.refresh(user)
-
-        send_email_with_temp_password(user.email, temp_password)
 
         return UserCreateWithCompaniesResponseDTO(
             id=user.id,
@@ -82,6 +96,10 @@ def create_user(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="User with this email already exists.")
+    
+    except HTTPException as e:
+        db.rollback()
+        raise e  # Re-raise the HTTPException to keep the correct response
     
     except Exception as e:
         db.rollback()
@@ -101,6 +119,7 @@ def create_user(
     """
     Create a new user with the role of 'company_recruit' and optionally assign to a company.
     Sends a temporary password via email.
+    If email sending fails, the user is NOT created.
     """  
     # Authorization check: Only 'company' role can create users
     if userToken.role != UserEnum.company:
@@ -110,7 +129,10 @@ def create_user(
         temp_password = generate_temp_password()
         hashed_password = get_password_hash(temp_password)
 
-        # Step 1: Create the user
+        # Ensure phone is properly handled (if not provided, store as None)
+        phone_number = user_in.phone if hasattr(user_in, "phone") and user_in.phone else None
+
+        # Step 1: Create the user (DO NOT COMMIT YET)
         user = userServices.create(
             db=db, 
             obj_in=UserInsert(**{
@@ -118,6 +140,7 @@ def create_user(
                 'email': user_in.email,
                 'password': hashed_password,
                 'role': UserEnum.company_recruit,
+                'phone': phone_number,  # Ensure phone is explicitly saved
             })
         )
 
@@ -126,6 +149,7 @@ def create_user(
             # Check if the company exists
             company = db.query(Company).filter(Company.id == company_id).first()
             if not company:
+                db.rollback()  # Rollback if company does not exist
                 raise HTTPException(status_code=404, detail=f"Company with ID {company_id} not found.")
 
             # Create CompanyUser record
@@ -135,15 +159,26 @@ def create_user(
             )
             db.add(company_user)
 
-        db.commit()  # Commit transaction after all operations succeed
+        # Try sending the email BEFORE committing
+        try:
+            send_email_with_temp_password(user.email, temp_password)
+        except Exception as email_error:
+            db.rollback()  # Rollback user creation if email sending fails
+            raise HTTPException(status_code=500, detail=f"Failed to send email: {str(email_error)}")
 
-        send_email_with_temp_password(user.email, temp_password)
+        # Now commit everything if email was sent successfully
+        db.commit()
+        db.refresh(user)
 
         return {"detail": "User created successfully."}
 
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="User with this email already exists.")
+    
+    except HTTPException as e:
+        db.rollback()
+        raise e  # Re-raise the HTTPException to return the correct response
     
     except Exception as e:
         db.rollback()
