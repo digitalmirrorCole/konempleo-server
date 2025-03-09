@@ -5,6 +5,7 @@ import os
 from typing import List, Optional
 from fastapi import APIRouter, Body, Depends, File, Query, UploadFile, BackgroundTasks, HTTPException, status
 from requests import Session
+from sqlalchemy import func
 from db.session import SessionLocal
 
 from app.auth.authDTO import UserToken
@@ -35,6 +36,7 @@ async def upload_cvs(
 ):
     """
     Asynchronous endpoint to process and upload CVs for a given offer and company.
+    Ensures the number of uploaded CVs does not exceed the allowed limit.
     """
 
     if userToken.role not in [UserEnum.super_admin, UserEnum.company, UserEnum.company_recruit, UserEnum.admin]:
@@ -44,6 +46,17 @@ async def upload_cvs(
     offer = db.query(Offer).filter(Offer.id == offerId).first()
     if not offer or not offer.active:
         raise HTTPException(status_code=404, detail="Offer not found or is inactive")
+
+    # Count existing VitaeOffer records for this offer
+    vitae_offer_count = db.query(func.count(VitaeOffer.id)).filter(VitaeOffer.offerId == offerId).scalar()
+
+    # Ensure the number of uploaded CVs does not exceed the available slots
+    available_slots = offer.assigned_cvs - vitae_offer_count
+    if available_slots < len(files):
+        raise HTTPException(
+            status_code=402,
+            detail=f"No se permite subir esa cantidad de cvs. Las disponibles actualmente: {offer.assigned_cvs}. En uso: {vitae_offer_count}, las restantes: {available_slots}, las que se intentaron subir: {len(files)}"
+        )
 
     # Check if the company exists
     company = db.query(Company).filter(Company.id == companyId).first()
@@ -82,19 +95,16 @@ async def upload_cvs(
     for batch in file_batches:
         urls = upload_batch(batch, company_name)
         if urls is None or urls == []:
-            raise HTTPException(status_code=500,
-                                detail="There was an error uploading files")
+            raise HTTPException(status_code=500, detail="There was an error uploading files")
         tasks.append(
-            thread_pool_manager.submit_task(offerId,
-                                            process_file_text,
-                                            batch, companyId, company_name,
-                                            db, urls, skills_list, city_offer,
-                                            age_offer, genre_offer,
-                                            experience_offer, offerId))
+            thread_pool_manager.submit_task(
+                offerId, process_file_text, batch, companyId, company_name,
+                db, urls, skills_list, city_offer, age_offer, genre_offer,
+                experience_offer, offerId
+            )
+        )
 
     return {"detail": "Processing files", "tasks": tasks}
-
-
 
 @cvRouter.get("/background-check/{cvitae_id}")
 async def background_check(cvitae_id: int, db: Session = Depends(get_db), userToken: UserToken = Depends(get_user_current), background_tasks: BackgroundTasks = BackgroundTasks()):

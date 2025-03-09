@@ -144,7 +144,7 @@ def update_company(
     # Update company fields
     fields_to_update = [
         'name', 'address', 'phone', 'website', 'description', 'active',
-        'availableoffers', 'totaloffers'
+        'availableoffers', 'totaloffers', 'is_deleted'
     ]
 
     for field in fields_to_update:
