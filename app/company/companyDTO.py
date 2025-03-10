@@ -67,6 +67,7 @@ class CompanyInDBBaseWCount(CompanyBase):
     admin_email: Optional[str] = None
     recruiter_name: Optional[str] = None
     recruiter_email: Optional[str] = None
+    recruiter_phone: Optional[str] = None
     total_contacted: int = 0
     total_interested: int = 0
 
@@ -81,6 +82,7 @@ class CompanyInDBBaseWCountWRecruiter(CompanyBase):
     admin_email: Optional[str] = None
     recruiter_name: Optional[str] = None
     recruiter_email: Optional[str] = None
+    recruiter_phone: Optional[str] = None
     total_contacted: int = 0
     total_interested: int = 0
 

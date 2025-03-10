@@ -177,6 +177,10 @@ def update_company(
                 
                 # Remove the old CompanyUser record
                 db.delete(current_responsible_user_record)
+            else:
+                current_responsible_user.phone = company_in.responsible_user.phone
+                db.update(current_responsible_user)
+                db.flush()
 
         # Create a new responsible user if they don't already exist
         if not responsible_user:
@@ -266,6 +270,7 @@ def get_company(
         CompanyUser.companyId.label("company_id"),
         Users.fullname.label("recruiter_name"),
         Users.email.label("recruiter_email"),
+        Users.phone.label("recruiter_phone"),
         func.row_number().over(
             partition_by=CompanyUser.companyId,
             order_by=Users.id
@@ -303,6 +308,7 @@ def get_company(
         func.coalesce(cv_count_subquery.c.cv_count, 0).label("cv_count"),
         recruiter_subquery.c.recruiter_name,
         recruiter_subquery.c.recruiter_email,
+        recruiter_subquery.c.recruiter_phone,
         func.coalesce(offer_totals_subquery.c.total_contacted, 0).label("total_contacted"),
         func.coalesce(offer_totals_subquery.c.total_interested, 0).label("total_interested")
     ).outerjoin(
@@ -322,7 +328,7 @@ def get_company(
 
     # Step 6: Format the response
     result = []
-    for company, cv_count, recruiter_name, recruiter_email, total_contacted, total_interested in companies_with_details:
+    for company, cv_count, recruiter_name, recruiter_email, recruiter_phone, total_contacted, total_interested in companies_with_details:
         # Generate a pre-signed URL for the picture
         presigned_url = None
         if company.picture:
@@ -346,6 +352,7 @@ def get_company(
             cv_count=cv_count,
             recruiter_name=recruiter_name,
             recruiter_email=recruiter_email,
+            recruiter_phone=recruiter_phone,
             total_contacted=total_contacted,
             total_interested=total_interested
         ))
@@ -406,6 +413,7 @@ def get_all_companies(
         CompanyUser.companyId.label("company_id"),
         Users.fullname.label("recruiter_name"),
         Users.email.label("recruiter_email"),
+        Users.phone.label("recruiter_phone"),
         func.row_number().over(
             partition_by=CompanyUser.companyId,
             order_by=Users.id
@@ -427,7 +435,8 @@ def get_all_companies(
         admin_subquery.c.admin_name,
         admin_subquery.c.admin_email,
         recruiter_subquery.c.recruiter_name,
-        recruiter_subquery.c.recruiter_email
+        recruiter_subquery.c.recruiter_email,
+        recruiter_subquery.c.recruiter_phone
     ).outerjoin(
         cv_count_subquery, cv_count_subquery.c.company_id == CompanyModel.id
     ).outerjoin(
@@ -442,7 +451,7 @@ def get_all_companies(
 
     # Step 6: Format the response
     result = []
-    for company, cv_count, total_contacted, total_interested, admin_name, admin_email, recruiter_name, recruiter_email in companies_query:
+    for company, cv_count, total_contacted, total_interested, admin_name, admin_email, recruiter_name, recruiter_email, recruiter_phone in companies_query:
         # Generate a pre-signed URL for the picture
         presigned_url = None
         if company.picture:
@@ -470,7 +479,8 @@ def get_all_companies(
             admin_name=admin_name,
             admin_email=admin_email,
             recruiter_name=recruiter_name,
-            recruiter_email=recruiter_email
+            recruiter_email=recruiter_email,
+            recruiter_email=recruiter_phone
         ))
 
     return result
@@ -510,6 +520,7 @@ def get_company_by_id(
         CompanyUser.companyId.label("company_id"),
         Users.fullname.label("recruiter_name"),
         Users.email.label("recruiter_email"),
+        Users.phone.label("recruiter_phone"),
         func.row_number().over(
             partition_by=CompanyUser.companyId,
             order_by=Users.id
@@ -543,6 +554,7 @@ def get_company_by_id(
         admin_subquery.c.admin_email,
         recruiter_subquery.c.recruiter_name,
         recruiter_subquery.c.recruiter_email,
+        recruiter_subquery.c.recruiter_phone,
         func.coalesce(offer_totals_subquery.c.total_contacted, 0).label('total_contacted'),
         func.coalesce(offer_totals_subquery.c.total_interested, 0).label('total_interested')
     ).outerjoin(
@@ -570,7 +582,7 @@ def get_company_by_id(
         raise HTTPException(status_code=404, detail="Company not found.")
 
     # Extract company details
-    company, cv_count, admin_name, admin_email, recruiter_name, recruiter_email, total_contacted, total_interested = company_with_details
+    company, cv_count, admin_name, admin_email, recruiter_name, recruiter_email, recruiter_phone, total_contacted, total_interested = company_with_details
 
     # Generate a pre-signed URL for the picture
     presigned_url = None
@@ -598,6 +610,7 @@ def get_company_by_id(
         admin_email=admin_email,
         recruiter_name=recruiter_name,
         recruiter_email=recruiter_email,
+        recruiter_phone=recruiter_phone,
         total_contacted=total_contacted,
         total_interested=total_interested
     )
