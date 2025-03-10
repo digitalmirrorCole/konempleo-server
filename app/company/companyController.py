@@ -480,7 +480,7 @@ def get_all_companies(
             admin_email=admin_email,
             recruiter_name=recruiter_name,
             recruiter_email=recruiter_email,
-            recruiter_email=recruiter_phone
+            recruiter_phone=recruiter_phone
         ))
 
     return result
