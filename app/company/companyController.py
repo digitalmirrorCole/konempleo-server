@@ -179,7 +179,7 @@ def update_company(
                 db.delete(current_responsible_user_record)
             else:
                 current_responsible_user.phone = company_in.responsible_user.phone
-                db.update(current_responsible_user)
+                db.add(current_responsible_user)
                 db.flush()
 
         # Create a new responsible user if they don't already exist
