@@ -574,6 +574,7 @@ def get_company_by_id(
         CompanyModel.id,
         admin_subquery.c.admin_name, admin_subquery.c.admin_email,
         recruiter_subquery.c.recruiter_name, recruiter_subquery.c.recruiter_email,
+        recruiter_subquery.c.recruiter_phone,
         offer_totals_subquery.c.total_contacted,
         offer_totals_subquery.c.total_interested
     ).first()
