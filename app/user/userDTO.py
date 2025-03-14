@@ -57,6 +57,7 @@ class UserInsert(BaseModel):
     email: EmailStr
     password: str
     role: UserEnum
+    phone: str
 
 class UserUpdateUser(BaseModel):
     fullname: str
