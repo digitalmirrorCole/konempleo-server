@@ -9,6 +9,7 @@ from aiohttp import ClientError
 from docx import Document
 from fastapi import UploadFile, HTTPException
 import openai
+from openai import OpenAIError
 from pdf2image import convert_from_bytes
 import pytesseract
 from requests import Session
@@ -225,7 +226,7 @@ def parse_prompt(
         print("RateLimit hit. Retrying in 5 seconds...")
         time.sleep(5)
         response_json = try_to_query(messages)
-    except openai.InvalidRequestError as e:
+    except OpenAIError as e:
         print(f"Invalid Request Error: {e}")
         print(f"Response Body: {e.response.json()}")  # Log the body
     except json.JSONDecodeError:
