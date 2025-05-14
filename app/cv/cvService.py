@@ -213,13 +213,12 @@ def parse_prompt(
         def try_to_query(messages):
             global raw_response, response_json
             response = openai.chat.completions.create(
-                model="gpt-3.5-turbo-16k",
+                model="gpt-4-turbo",
                 messages=messages,
                 temperature=0
             )
-            print(json.dumps(response.model_dump(), indent=2))
             raw_response = response.choices[0].message.content.strip()
-            response_json = json.loads(raw_response)
+            response_json = extract_json(raw_response)
             return response_json
 
         response_json = try_to_query(messages)
@@ -280,13 +279,20 @@ def analyze_and_update_vitae_offers(
             db.add(temp_cvitae)
             db.flush()  # Save the record to get an ID
 
+            raw_score = candidate_data.get("score")
+            try:
+                score = float(raw_score)
+            except (ValueError, TypeError):
+                score = 0.0
+
+
             # Create VitaeOffer record
             vitae_offer = VitaeOffer(
                 cvitaeId=temp_cvitae.Id,
                 offerId=offerId,
                 status="pending",
                 ai_response=json.dumps(candidate_data),
-                response_score=candidate_data.get("score",0),
+                response_score=score,
             )
             db.add(vitae_offer)
 
@@ -491,3 +497,16 @@ def process_existing_vitae_records(
         db.rollback()
         print(f"Error processing existing CVitae records: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while processing CVitae records.")
+
+def extract_json(raw_response):
+    # Try to extract JSON block inside ```json ... ```
+    match = re.search(r"```json\s*(\{.*?\})\s*```", raw_response, re.DOTALL)
+    if match:
+        return json.loads(match.group(1))
+    else:
+        # Try to parse entire response as JSON (if it's just JSON)
+        try:
+            return json.loads(raw_response)
+        except json.JSONDecodeError:
+            print("Failed to parse JSON.")
+            return None
