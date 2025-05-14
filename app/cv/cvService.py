@@ -217,6 +217,7 @@ def parse_prompt(
                 messages=messages,
                 temperature=0
             )
+            print(json.dumps(response.model_dump(), indent=2))
             raw_response = response.choices[0].message.content.strip()
             response_json = json.loads(raw_response)
             return response_json
