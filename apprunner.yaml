@@ -1,0 +1,9 @@
+version: 1.0
+runtime: python3
+build:
+  commands:
+    - echo "Using Dockerfile for App Runner build"
+run:
+  command: sh docker-start.sh
+  network:
+    port: 8000
