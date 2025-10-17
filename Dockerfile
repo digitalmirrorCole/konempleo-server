@@ -1,32 +1,32 @@
-FROM python:3.8
+FROM python:3.11-slim
+
+# Evita buffering de logs
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /konempleo
 COPY ./requirements.txt /konempleo/requirements.txt
 
-# Install dependencies
+# Instala dependencias del sistema necesarias
 RUN apt-get update && apt-get install -y \
     poppler-utils \
     tesseract-ocr \
     libtesseract-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir -r /konempleo/requirements.txt
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy the application code
+# Instala dependencias Python
+RUN pip install --upgrade pip && pip install --no-cache-dir -r /konempleo/requirements.txt
+
+# Copia el resto del código
 COPY . /konempleo/
 
-# Copy the .env file
-COPY ./app/.env /konempleo/app/.env
-COPY ./app/.env /konempleo/migrations/.env
-COPY ./app/.env /konempleo/db/.env
-
-# Set environment variable from .env file
-ENV $(cat /konempleo/app/.env)
-
+# Expone el puerto de la app
 EXPOSE 8000
 
-COPY docker-start.sh /konempleo/docker-start.sh
+# Variables por defecto (App Runner puede sobrescribir)
+ENV PORT=8000 APP_ENV=production
+
+# Da permisos al script
 RUN chmod +x /konempleo/docker-start.sh
 
-# Command to run the application
-CMD [ "/konempleo/docker-start.sh" ]
+# Comando de arranque
+CMD ["/konempleo/docker-start.sh"]
