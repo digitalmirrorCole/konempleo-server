@@ -1,32 +1,33 @@
 FROM python:3.11-slim
 
-# Evita buffering de logs
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 
 WORKDIR /konempleo
 COPY ./requirements.txt /konempleo/requirements.txt
 
-# Instala dependencias del sistema necesarias
-RUN apt-get update && apt-get install -y \
+# 🔧 Paquetes de sistema necesarios para compilar/ejecutar lxml, opencv, tesseract, etc.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential gcc g++ make \
+    libpq-dev \
+    libxml2-dev libxslt1-dev \
+    libgl1 libglib2.0-0 \
+    tesseract-ocr libtesseract-dev \
     poppler-utils \
-    tesseract-ocr \
-    libtesseract-dev \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/*
 
-# Instala dependencias Python
-RUN pip install --upgrade pip && pip install --no-cache-dir -r /konempleo/requirements.txt
+# 🧱 Primero PyTorch CPU (ruedas precompiladas), luego el resto de dependencias
+RUN python -m pip install --upgrade pip \
+ && python -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+      torch==2.4.1 torchvision==0.19.1 \
+ && python -m pip install --no-cache-dir -r /konempleo/requirements.txt
 
-# Copia el resto del código
+# Copia el código
 COPY . /konempleo/
 
-# Expone el puerto de la app
+# Variables y puerto
+ENV PORT=8000 APP_ENV=production
 EXPOSE 8000
 
-# Variables por defecto (App Runner puede sobrescribir)
-ENV PORT=8000 APP_ENV=production
-
-# Da permisos al script
+# Arranque
 RUN chmod +x /konempleo/docker-start.sh
-
-# Comando de arranque
 CMD ["/konempleo/docker-start.sh"]
