@@ -1,11 +1,13 @@
 FROM python:3.11-slim
 
-ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/konempleo
 
 WORKDIR /konempleo
 COPY ./requirements.txt /konempleo/requirements.txt
 
-# 🔧 Paquetes de sistema necesarios para compilar/ejecutar lxml, opencv, tesseract, etc.
+# SO: librerías mínimas para psycopg2, lxml, opencv, tesseract, pdf2image
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential gcc g++ make \
     libpq-dev \
@@ -15,16 +17,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
   && rm -rf /var/lib/apt/lists/*
 
-# 🧱 Primero PyTorch CPU (ruedas precompiladas), luego el resto de dependencias
+# Primero PyTorch CPU (ruedas precompiladas), luego el resto
 RUN python -m pip install --upgrade pip \
  && python -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
       torch==2.4.1 torchvision==0.19.1 \
  && python -m pip install --no-cache-dir -r /konempleo/requirements.txt
 
-# Copia el código
+# Copia del código
 COPY . /konempleo/
 
-# Variables y puerto
+# Puerto y entorno
 ENV PORT=8000 APP_ENV=production
 EXPOSE 8000
 
