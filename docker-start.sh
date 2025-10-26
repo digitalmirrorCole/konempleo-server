@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "🚀 Starting KonEmpleo Server..."
+echo "🚀 Starting KonEmpleo Backend"
 echo "CWD=$(pwd)"
-echo "PYTHONPATH=${PYTHONPATH:-}"
-echo "Listing /konempleo contents:"
-ls -la /konempleo || true
+echo "PYTHONPATH=${PYTHONPATH:-<empty>}"
 
-# Si la app necesita migraciones de base de datos (opcional):
-# echo "📦 Running Alembic migrations..."
-# alembic upgrade head || echo "Alembic not found, skipping migrations."
+# Asegura que Python vea el paquete "app" dentro de /konempleo
+export PYTHONPATH="/konempleo:${PYTHONPATH:-}"
 
-# Ejecutar la aplicación FastAPI
-echo "🟢 Launching FastAPI with Uvicorn..."
-exec python -m uvicorn --app-dir /konempleo app.main:app --host 0.0.0.0 --port "${PORT:-8000}"
+# Lanza FastAPI con Gunicorn+Uvicorn
+exec gunicorn app.main:app \
+  --worker-class uvicorn.workers.UvicornWorker \
+  --workers 2 \
+  --bind 0.0.0.0:${PORT:-8000} \
+  --timeout 120
